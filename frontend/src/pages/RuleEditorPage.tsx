@@ -161,19 +161,19 @@ export function RuleEditorPage() {
 
   return (
     <form onSubmit={save} noValidate>
-      <Breadcrumb
-        items={
-          rule
-            ? [
-                { label: 'Règles', to: '/rules' },
-                { label: rule.name, to: `/rules/${rule.ruleId}` },
-                { label: createsVersion ? 'Nouvelle version' : 'Modifier' },
-              ]
-            : [{ label: 'Règles', to: '/rules' }, { label: 'Nouvelle règle' }]
-        }
-      />
       <div className="page-head">
         <div>
+          <Breadcrumb
+            items={
+              rule
+                ? [
+                    { label: 'Règles', to: '/rules' },
+                    { label: rule.name, to: `/rules/${rule.ruleId}` },
+                    { label: createsVersion ? 'Nouvelle version' : 'Modifier' },
+                  ]
+                : [{ label: 'Règles', to: '/rules' }, { label: 'Nouvelle règle' }]
+            }
+          />
           <h1>{rule ? (createsVersion ? `Nouvelle version — ${rule.name}` : `Modifier — ${rule.name}`) : 'Nouvelle règle'}</h1>
           <p>Décrivez la règle, écrivez la requête, testez-la, puis soumettez-la à l'équipe data.</p>
         </div>

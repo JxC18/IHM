@@ -12,7 +12,6 @@ import { ProductionPage } from './pages/ProductionPage';
 import { AuditPage } from './pages/AuditPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { OverviewPage } from './pages/OverviewPage';
-import { NavHistoryProvider } from './nav/history';
 
 function RequireUser({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
@@ -40,7 +39,6 @@ export function App() {
     <ThemeRoot>
       <AuthProvider>
         <Router>
-          <NavHistoryProvider>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route
@@ -61,7 +59,6 @@ export function App() {
               <Route path="*" element={<div className="empty">Page introuvable.</div>} />
             </Route>
           </Routes>
-          </NavHistoryProvider>
         </Router>
       </AuthProvider>
     </ThemeRoot>

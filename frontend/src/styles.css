@@ -194,78 +194,61 @@ main {
   margin: 4px 0 0;
   color: var(--text-2);
 }
-/* Fil d'Ariane : retour + chemin */
+/* Fil d'Ariane, au-dessus du titre */
 .crumbs {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 14px;
+  margin-bottom: 8px;
   min-width: 0;
-  font-size: 13px;
-}
-.crumb-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: none;
-  max-width: 260px;
-  height: 28px;
-  padding: 0 10px 0 8px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text-2);
-  font: inherit;
-  font-weight: 550;
-  cursor: pointer;
-}
-.crumb-back:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.crumb-back-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .crumbs ol {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   min-width: 0;
   margin: 0;
   padding: 0;
   list-style: none;
-  color: var(--text-3);
+  font-size: 13px;
 }
 .crumbs li {
+  display: flex;
   min-width: 0;
+}
+.crumb-sep {
+  flex: none;
+  align-items: center;
+  color: var(--border-strong);
+}
+.crumb-link,
+.crumb-current {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   max-width: 320px;
+  padding: 3px 8px;
+  border-radius: 999px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.crumbs li.crumb-sep {
-  flex: none;
-}
-.crumbs a {
+.crumb-link {
   color: var(--text-2);
-  text-decoration: none;
-}
-.crumbs a:hover {
-  color: var(--accent);
-  text-decoration: underline;
-}
-.crumbs [aria-current='page'] {
-  color: var(--text);
   font-weight: 550;
+  text-decoration: none;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
-.crumb-sep {
+.crumbs li:first-child .crumb-link {
+  margin-left: -8px;
+}
+.crumb-link:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.crumb-current {
   color: var(--text-3);
 }
-@media (max-width: 600px) {
-  .crumbs ol {
-    display: none;
+@media (prefers-reduced-motion: reduce) {
+  .crumb-link {
+    transition: none;
   }
 }
 

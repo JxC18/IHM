@@ -76,9 +76,9 @@ export function RuleDetailPage() {
 
   return (
     <>
-      <Breadcrumb items={[{ label: 'Règles', to: '/rules' }, { label: r.name }]} />
       <div className="page-head">
         <div>
+          <Breadcrumb items={[{ label: 'Règles', to: '/rules' }, { label: r.name }]} />
           <div className="row" style={{ gap: 10 }}>
             <h1>{r.name}</h1>
             <span className="tag">v{r.version}</span>
