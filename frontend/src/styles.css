@@ -29,12 +29,10 @@
   --diff-del: #fbe5e5;
 
   /* graphiques */
-  --series-1: #c8102e;
+  --series-1: #3d3c39;
   --grid: #e6e5e1;
   --incomplete: rgba(111, 110, 105, 0.1);
 
-  --brand-bar: #c8102e;
-  --on-brand-bar: #ffffff;
   --radius: 8px;
   --radius-sm: 5px;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 8px rgba(0, 0, 0, 0.04);
@@ -70,11 +68,10 @@
     --muted-soft: #2a2a27;
     --diff-add: #17301a;
     --diff-del: #3d1b1b;
-    --series-1: #f0646f;
+    --series-1: #d6d5ce;
     --grid: #2d2d2a;
     --incomplete: rgba(200, 200, 190, 0.07);
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
-    --brand-bar: #8e0b20;
   }
 }
 :root[data-theme='dark'] {
@@ -104,11 +101,10 @@
   --muted-soft: #2a2a27;
   --diff-add: #17301a;
   --diff-del: #3d1b1b;
-  --series-1: #f0646f;
+  --series-1: #d6d5ce;
   --grid: #2d2d2a;
   --incomplete: rgba(200, 200, 190, 0.07);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --brand-bar: #8e0b20;
 }
 
 * {
@@ -1026,7 +1022,7 @@ details summary {
 }
 
 /* =====================================================================
-   Barre latérale rouge, flottante, repliable
+   Barre latérale blanche, flottante, repliable — le rouge reste un accent
    ===================================================================== */
 .app {
   min-height: 100vh;
@@ -1050,8 +1046,9 @@ details summary {
   gap: 18px;
   padding: 18px 14px;
   border-radius: 24px;
-  color: #ffffff;
-  background: var(--brand-bar);
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
   box-shadow: var(--shadow);
   overflow: hidden;
   z-index: 20;
@@ -1069,7 +1066,7 @@ details summary {
   gap: 10px;
   font-weight: 700;
   font-size: 15px;
-  color: #ffffff;
+  color: var(--text);
   text-decoration: none;
   white-space: nowrap;
   min-width: 0;
@@ -1079,17 +1076,12 @@ details summary {
   width: 32px;
   height: 32px;
   border-radius: 10px;
-  background: #ffffff;
-  color: #c8102e;
+  background: var(--accent);
+  color: var(--on-accent);
   display: grid;
   place-items: center;
   font-size: 15px;
   font-weight: 800;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-}
-.login-card .brand-mark {
-  background: var(--accent);
-  color: #ffffff;
 }
 .sidebar-toggle {
   flex: none;
@@ -1099,12 +1091,13 @@ details summary {
   height: 32px;
   border-radius: 10px;
   border: none;
-  background: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
+  background: transparent;
+  color: var(--text-3);
   cursor: pointer;
 }
 .sidebar-toggle:hover {
-  background: rgba(255, 255, 255, 0.22);
+  background: var(--surface-2);
+  color: var(--text);
 }
 .nav {
   display: flex;
@@ -1119,7 +1112,7 @@ details summary {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--text-3);
   padding: 12px 12px 4px;
   white-space: nowrap;
 }
@@ -1128,8 +1121,8 @@ details summary {
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
-  border-radius: 14px;
-  color: rgba(255, 255, 255, 0.9);
+  border-radius: 12px;
+  color: var(--text-2);
   text-decoration: none;
   white-space: nowrap;
   font-weight: 500;
@@ -1138,21 +1131,20 @@ details summary {
   flex: none;
 }
 .nav a:hover {
-  background: rgba(255, 255, 255, 0.14);
-  color: #ffffff;
+  background: var(--surface-2);
+  color: var(--text);
 }
 .nav a.active {
-  background: rgba(255, 255, 255, 0.95);
-  color: #c8102e;
+  background: var(--accent-soft);
+  color: var(--accent);
   font-weight: 650;
-  box-shadow: 0 6px 18px rgba(80, 0, 15, 0.18);
 }
 .sidebar-demo {
   font-size: 12px;
   padding: 8px 12px;
   border-radius: 12px;
-  background: rgba(253, 241, 214, 0.92);
-  color: #3d2a00;
+  background: var(--warn-soft);
+  color: var(--text);
   font-weight: 600;
 }
 .userchip {
@@ -1161,15 +1153,15 @@ details summary {
   gap: 10px;
   padding: 10px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  color: #ffffff;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
   text-decoration: none;
   white-space: nowrap;
   min-width: 0;
 }
 .userchip:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--surface-3);
 }
 .avatar {
   flex: none;
@@ -1184,8 +1176,9 @@ details summary {
   font-weight: 700;
 }
 .sidebar .avatar {
-  background: rgba(255, 255, 255, 0.95);
-  color: #c8102e;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
 }
 .user-meta {
   display: flex;
@@ -1199,10 +1192,7 @@ details summary {
   text-overflow: ellipsis;
 }
 .user-meta .mono {
-  color: rgba(255, 255, 255, 0.75);
-}
-.sidebar :focus-visible {
-  outline-color: #ffffff;
+  color: var(--text-3);
 }
 
 /* Replié : icônes seules (les libellés restent accessibles via title + texte masqué) */
