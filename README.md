@@ -27,15 +27,144 @@ sans passer par le mail, et mesure leur efficacité grâce au retour du prestata
 
 ## Démarrer
 
+Aucun Docker n'est nécessaire : en local, l'API tourne sur SQLite (un simple fichier) au lieu de PostgreSQL,
+avec BigQuery simulé. Il faut seulement **Node.js**, **Python 3.12 ou plus** et **Git**.
+
+### 1. Installer les outils (une seule fois)
+
+**Windows** (PowerShell) — fermer puis rouvrir PowerShell après l'installation :
+```powershell
+winget install OpenJS.NodeJS.LTS
+winget install Python.Python.3.12
+winget install Git.Git
+```
+
+**macOS** (avec [Homebrew](https://brew.sh)) :
+```bash
+brew install node python@3.12 git
+```
+
+**Linux (Ubuntu/Debian)** :
+```bash
+sudo apt install -y git python3 python3-venv
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt install -y nodejs
+```
+
+Vérification : `node -v` (22.x ou plus) et `python --version` / `python3 --version` (3.12 ou plus).
+
+### 2. Récupérer le code
+
+```bash
+git clone -b claude/rules-manager-prd-oldfut https://github.com/jxc18/ihm.git
+cd ihm
+```
+
+### 3a. Voir l'interface seule (données simulées)
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+Ouvrir http://localhost:5173 et se connecter avec le matricule `104233` (ou `118870`, `120415`).
+
+### 3b. Interface + vraie API
+
+Deux terminaux, depuis le dossier du projet.
+
+**Terminal 1 — API**
+
+Windows (PowerShell) :
+```powershell
+cd backend
+py -3.12 -m venv .venv
+.venv\Scripts\python -m pip install -e ".[dev]"
+$env:RM_DATABASE_URL="sqlite:///./rules.db"; $env:RM_COOKIE_SECURE="false"
+.venv\Scripts\alembic upgrade head
+.venv\Scripts\uvicorn app.main:app --port 8000
+```
+
+macOS / Linux :
+```bash
+cd backend
+python3 -m venv .venv
+.venv/bin/pip install -e ".[dev]"
+export RM_DATABASE_URL=sqlite:///./rules.db RM_COOKIE_SECURE=false
+.venv/bin/alembic upgrade head
+.venv/bin/uvicorn app.main:app --port 8000
+```
+Documentation interactive de l'API : http://localhost:8000/docs
+
+**Terminal 2 — interface branchée sur l'API**
+
+Windows : `cd frontend`, `npm install`, puis `$env:VITE_API_MODE="http"; npm run dev`
+
+macOS / Linux :
+```bash
+cd frontend
+npm install
+VITE_API_MODE=http npm run dev
+```
+Ouvrir http://localhost:5173. La base est vide : n'importe quel matricule à 6 chiffres, puis nom et prénom à la
+première connexion.
+
+### 4. Tests automatiques
+
+```bash
+cd frontend && npm test          # tests de l'interface
+cd ../backend
+.venv/bin/pytest -q              # tests de l'API (Windows : .venv\Scripts\pytest -q)
+```
+
+### Avec Docker (optionnel)
+
+`docker compose up --build`, puis http://localhost:8081 (PostgreSQL + API + interface).
+
+### À savoir
+
+- Les variables d'environnement (`export …` / `$env:…`) ne valent que pour le terminal courant : les redéfinir
+  si on le rouvre.
+- En local, BigQuery est simulé : un test de requête répond toujours « 6 Go, 5 lignes » et les tableaux de
+  performance sont vides. Pour le vrai BigQuery : accès GCP et `RM_BIGQUERY_MODE=real`.
+- Le panneau « Simulation équipe data » (valider, mettre en production…) n'existe qu'en mode démo (3a).
+
+### Dépannage : « npm is not recognized » (Windows)
+
+Windows ne trouve pas Node.js : il n'est pas installé, ou le terminal a été ouvert avant son installation.
+
+1. **Fermer et rouvrir le terminal** (toutes les fenêtres PowerShell, et VS Code si on utilise son terminal),
+   puis vérifier avec `node -v` et `npm -v`.
+2. **Installer Node.js** : `winget install OpenJS.NodeJS.LTS`, ou, si `winget` est inconnu, l'installateur **LTS**
+   de https://nodejs.org (options par défaut, « Add to PATH » cochée). Rouvrir le terminal.
+3. **Node installé mais npm introuvable** : le dossier n'est pas dans le PATH.
+   ```powershell
+   Test-Path "C:\Program Files\nodejs\npm.cmd"
+   ```
+   Si `True`, l'ajouter au PATH du compte puis rouvrir le terminal :
+   ```powershell
+   [Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path","User") + ";C:\Program Files\nodejs", "User")
+   ```
+   Si `False`, relancer l'installateur.
+4. **« L'exécution de scripts est désactivée sur ce système »** : autoriser les scripts pour son compte,
+   ou utiliser l'Invite de commandes (`cmd`) à la place de PowerShell.
+   ```powershell
+   Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+   ```
+
+**PC d'entreprise sans droits administrateur** : prendre la version **.zip** sur
+https://nodejs.org/en/download, la décompresser (par ex. dans `C:\Users\<vous>\node`) et ajouter ce dossier au
+PATH avec la commande du point 3. Si le poste bloque aussi cela, demander l'installation au service informatique ;
+en attendant, l'API se teste seule via http://localhost:8000/docs.
+
+### Commandes du Makefile (macOS / Linux)
+
 | Besoin | Commande |
 |---|---|
-| Voir l'IHM seule, données simulées | `cd frontend && npm install && npm run dev` → http://localhost:5173 |
-| Tout en conteneurs (PostgreSQL + API + front) | `docker compose up --build` → http://localhost:8081 |
-| Développer l'API | `make up-db` puis `make dev-api` (port 8000), et `make dev-front-http` pour le front branché dessus |
-| Tests | `make test` · lint API : `make lint` |
-
-Connexion : n'importe quel matricule à 6 chiffres ; un matricule inconnu déclenche la saisie nom / prénom.
-En mode démo, les matricules `104233`, `118870`, `120415` ont déjà des règles.
+| Tout installer | `make install` |
+| Interface en mode démo | `make dev-front` |
+| API locale (avec PostgreSQL : `make up-db`) | `make dev-api` |
+| Interface branchée sur l'API | `make dev-front-http` |
+| Tests / lint | `make test` · `make lint` |
 
 ### Configuration de l'API (variables `RM_*`, voir `backend/.env.example`)
 
