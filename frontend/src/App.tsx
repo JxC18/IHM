@@ -1,0 +1,62 @@
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import type { ReactNode } from 'react';
+import { AuthProvider, useAuth } from './auth/AuthContext';
+import { useTheme } from './prefs/prefs';
+import { Layout } from './components/Layout';
+import { Spinner } from './components/ui';
+import { LoginPage } from './pages/LoginPage';
+import { RulesListPage } from './pages/RulesListPage';
+import { RuleEditorPage } from './pages/RuleEditorPage';
+import { RuleDetailPage } from './pages/RuleDetailPage';
+import { ProductionPage } from './pages/ProductionPage';
+import { AuditPage } from './pages/AuditPage';
+import { ProfilePage } from './pages/ProfilePage';
+
+function RequireUser({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth();
+  const loc = useLocation();
+  if (loading)
+    return (
+      <div className="login-wrap">
+        <Spinner />
+      </div>
+    );
+  if (!user) return <Navigate to="/login" replace state={{ from: loc.pathname }} />;
+  return <>{children}</>;
+}
+
+function ThemeRoot({ children }: { children: ReactNode }) {
+  useTheme();
+  return <>{children}</>;
+}
+
+export function App() {
+  return (
+    <ThemeRoot>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route
+              element={
+                <RequireUser>
+                  <Layout />
+                </RequireUser>
+              }
+            >
+              <Route path="/" element={<Navigate to="/rules" replace />} />
+              <Route path="/rules" element={<RulesListPage />} />
+              <Route path="/rules/new" element={<RuleEditorPage />} />
+              <Route path="/rules/:ruleId" element={<RuleDetailPage />} />
+              <Route path="/rules/:ruleId/edit" element={<RuleEditorPage />} />
+              <Route path="/production" element={<ProductionPage />} />
+              <Route path="/audit" element={<AuditPage />} />
+              <Route path="/profile" element={<ProfilePage />} />
+              <Route path="*" element={<div className="empty">Page introuvable.</div>} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </ThemeRoot>
+  );
+}
