@@ -1612,3 +1612,40 @@ details summary {
     display: none;
   }
 }
+
+/* Liste des règles : les colonnes secondaires se masquent selon la place disponible,
+   plutôt que de faire défiler le tableau (aperçu étroit, barre latérale ouverte). */
+.rules-card,
+.prod-card {
+  container-type: inline-size;
+}
+@container (max-width: 760px) {
+  .prod-card .col-crit {
+    display: none;
+  }
+}
+@container (max-width: 1200px) {
+  .rules-card .col-a {
+    display: none;
+  }
+}
+@container (max-width: 1100px) {
+  .rules-card .col-b {
+    display: none;
+  }
+}
+@container (max-width: 880px) {
+  .rules-card .col-c {
+    display: none;
+  }
+}
+@container (max-width: 780px) {
+  .rules-card .col-d {
+    display: none;
+  }
+}
+@container (max-width: 560px) {
+  .rules-card .col-e {
+    display: none;
+  }
+}

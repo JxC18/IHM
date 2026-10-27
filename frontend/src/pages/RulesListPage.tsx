@@ -42,7 +42,7 @@ export function RulesListPage() {
         </Link>
       </div>
 
-      <div className="card">
+      <div className="card rules-card">
         <div className="card-pad stack" style={{ gap: 10, borderBottom: '1px solid var(--border)' }}>
           <div className="row">
             <div className="field" style={{ flex: '1 1 280px' }}>
@@ -108,17 +108,17 @@ export function RulesListPage() {
                 <tr>
                   <th>Règle</th>
                   <th>Statut</th>
-                  <th>Typologie</th>
-                  <th>Criticité</th>
-                  <th>Fréquence</th>
-                  <th>Propriétaire</th>
-                  <th className="num">Version</th>
+                  <th className="col-c">Typologie</th>
+                  <th className="col-e">Criticité</th>
+                  <th className="col-a">Fréquence</th>
+                  <th className="col-b">Propriétaire</th>
+                  <th className="num col-a">Version</th>
                   <th aria-sort={filters.sort === 'updated_asc' ? 'ascending' : 'descending'}>
                     <button type="button" className="th-sort" onClick={() => set({ sort: filters.sort === 'updated_asc' ? 'updated_desc' : 'updated_asc' })}>
                       Modifiée le <span aria-hidden="true">{filters.sort === 'updated_asc' ? '↑' : '↓'}</span>
                     </button>
                   </th>
-                  <th>Dernier test</th>
+                  <th className="col-d">Dernier test</th>
                 </tr>
               </thead>
               <tbody>
@@ -138,13 +138,13 @@ export function RulesListPage() {
                         {r.productionVersion && <span className="small muted">v{r.productionVersion} en production</span>}
                       </div>
                     </td>
-                    <td><span className="tag">{r.fraudTypology}</span></td>
-                    <td><CriticalityBadge value={r.criticality} /></td>
-                    <td className="small">{SCHEDULE_LABEL[r.schedule]}</td>
-                    <td className="small">{r.ownerName}</td>
-                    <td className="num">v{r.version}</td>
+                    <td className="col-c"><span className="tag">{r.fraudTypology}</span></td>
+                    <td className="col-e"><CriticalityBadge value={r.criticality} /></td>
+                    <td className="small col-a">{SCHEDULE_LABEL[r.schedule]}</td>
+                    <td className="small col-b">{r.ownerName}</td>
+                    <td className="num col-a">v{r.version}</td>
                     <td className="small">{fmtDateTime(r.updatedAt)}</td>
-                    <td className="small nowrap">
+                    <td className="small nowrap col-d">
                       {!r.lastTest ? (
                         <span className="muted">Jamais testée</span>
                       ) : r.lastTest.success ? (

@@ -56,7 +56,7 @@ export function ProductionPage() {
           Une commande remontée par plusieurs règles est comptée pour chacune : les volumes de ce tableau <strong>ne s'additionnent pas</strong>.
           Les 7 derniers jours sont incomplets (délai de traitement du prestataire).
         </Alert>
-        <div className="card">
+        <div className="card prod-card">
           <div className="card-pad row" style={{ borderBottom: '1px solid var(--border)' }}>
             <label htmlFor="thr" className="small">
               Seuil de précision « à surveiller »
@@ -91,7 +91,7 @@ export function ProductionPage() {
                 <thead>
                   <tr>
                     {th('name', 'Règle', false)}
-                    <th>Criticité</th>
+                    <th className="col-crit">Criticité</th>
                     {th('volume', 'Volume remonté')}
                     {th('processing', 'Taux de traitement')}
                     {th('precision', 'Taux de précision')}
@@ -112,7 +112,7 @@ export function ProductionPage() {
                           v{r.version} · {r.fraudTypology} · {r.ownerName}
                         </div>
                       </td>
-                      <td>
+                      <td className="col-crit">
                         <CriticalityBadge value={r.criticality} />
                       </td>
                       <td className="num">{fmtInt(r.ordersFlagged30d)}</td>
