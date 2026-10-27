@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { RuleDetail, RuleVersion } from '../api/types';
-import { SqlEditor } from '../components/SqlEditor';
+import type { RuleDetail, RuleVersion, SqlIssue } from '../api/types';
+import { SqlEditor, type SqlEditorHandle } from '../components/SqlEditor';
+import { TestPanel } from '../components/TestPanel';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { usePageTitle } from '../nav/history';
 import { DiffView } from '../components/DiffView';
@@ -42,6 +43,15 @@ export function RuleDetailPage() {
   const testOk = !!last && last.success && last.phase === 'EXECUTION' && last.queryHash === hash;
   const canSubmit = r.status === 'DRAFT' && testOk;
   const everInProduction = r.versions.some((v) => !!v.firstRunAt);
+
+  /** Ouvre l'onglet Définition et fait défiler jusqu'au bloc de test. */
+  function showTest() {
+    setTab('definition');
+    setTimeout(() => document.getElementById('rule-test')?.scrollIntoView({
+          behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+          block: 'start',
+        }), 50);
+  }
 
   async function submit() {
     setBusy(true);
@@ -83,8 +93,11 @@ export function RuleDetailPage() {
           </p>
         </div>
         <div className="row">
+          <button type="button" className="btn" onClick={showTest}>
+            ▶ Tester
+          </button>
           <Link to={`/rules/${r.ruleId}/edit`} className="btn">
-            {r.status === 'DRAFT' ? 'Modifier et tester' : 'Créer une nouvelle version'}
+            {r.status === 'DRAFT' ? 'Modifier' : 'Créer une nouvelle version'}
           </Link>
           {r.status === 'DRAFT' && (
             <button
@@ -129,7 +142,9 @@ export function RuleDetailPage() {
                 : !last.success
                   ? 'Le dernier test a échoué.'
                   : 'Le dernier test est un dry-run : confirmez l’exécution échantillonnée.'}{' '}
-            <Link to={`/rules/${r.ruleId}/edit`}>Tester la requête</Link>
+            <button type="button" className="linkish" onClick={showTest}>
+              Tester la requête
+            </button>
           </Alert>
         )}
       </div>
@@ -144,7 +159,7 @@ export function RuleDetailPage() {
       </div>
 
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
-        {tab === 'definition' && <DefinitionTab r={r} />}
+        {tab === 'definition' && <DefinitionTab r={r} onTested={rule.reload} />}
         {tab === 'performance' && <PerformanceDashboard ruleId={r.ruleId} everInProduction={everInProduction} />}
         {tab === 'tests' && <TestsTab r={r} hash={hash} />}
         {tab === 'versions' && <VersionsTab r={r} />}
@@ -156,7 +171,9 @@ export function RuleDetailPage() {
   );
 }
 
-function DefinitionTab({ r }: { r: RuleDetail }) {
+function DefinitionTab({ r, onTested }: { r: RuleDetail; onTested: () => void }) {
+  const editor = useRef<SqlEditorHandle>(null);
+  const [issues, setIssues] = useState<SqlIssue[]>();
   return (
     <div className="stack">
       <div className="card card-pad stack" style={{ gap: 12 }}>
@@ -190,7 +207,27 @@ function DefinitionTab({ r }: { r: RuleDetail }) {
           <h2>Requête SQL</h2>
         </div>
         <div className="card-pad stack">
-          <SqlEditor value={r.sqlQuery} readOnly ariaLabel="Requête SQL (lecture seule)" />
+          <SqlEditor ref={editor} value={r.sqlQuery} readOnly issues={issues} ariaLabel="Requête SQL (lecture seule)" />
+        </div>
+      </section>
+      <section className="card" id="rule-test" aria-labelledby="rule-test-title">
+        <div className="card-head">
+          <div>
+            <h2 id="rule-test-title">Tester la requête</h2>
+            <p>
+              Test de la v{r.version} telle qu'enregistrée, sans créer de nouvelle version
+              {r.status === 'DRAFT' ? ' : un test réussi permet de la soumettre.' : '.'}
+            </p>
+          </div>
+        </div>
+        <div className="card-pad">
+          <TestPanel
+            sql={r.sqlQuery}
+            ruleId={r.ruleId}
+            onIssues={setIssues}
+            onGoTo={(l, c) => editor.current?.goTo(l, c)}
+            onTested={onTested}
+          />
         </div>
       </section>
     </div>
