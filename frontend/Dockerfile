@@ -10,6 +10,7 @@ RUN npm run build
 
 # Runtime : Nginx non-root (PRD §10), port 8080 attendu par Cloud Run
 FROM nginxinc/nginx-unprivileged:1.27-alpine
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+ENV API_UPSTREAM=http://api:8080 API_HOST=api
+COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 8080

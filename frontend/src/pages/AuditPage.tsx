@@ -44,14 +44,14 @@ export function AuditTable({ events, showRule = true }: { events: AuditEvent[]; 
                   {e.ruleId ? (
                     <>
                       <Link to={`/rules/${e.ruleId}`}>{e.ruleName}</Link>
-                      {e.version !== undefined && <span className="muted"> v{e.version}</span>}
+                      {e.version != null && <span className="muted"> v{e.version}</span>}
                     </>
                   ) : (
                     <span className="muted">—</span>
                   )}
                 </td>
               )}
-              <td className="small">{e.details ?? (!showRule && e.version !== undefined ? `v${e.version}` : '')}</td>
+              <td className="small">{e.details ?? (!showRule && e.version != null ? `v${e.version}` : '')}</td>
             </tr>
           ))}
         </tbody>

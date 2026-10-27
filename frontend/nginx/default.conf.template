@@ -1,0 +1,26 @@
+# Rendu au démarrage par l'image nginx (envsubst) : ${API_UPSTREAM} = URL de l'API.
+server {
+  listen 8080;
+  root /usr/share/nginx/html;
+  index index.html;
+
+  # Même origine pour le front et l'API : le cookie de session reste first-party.
+  location /api/ {
+    proxy_pass ${API_UPSTREAM}/;
+    proxy_set_header Host ${API_HOST};
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_ssl_server_name on;
+    proxy_read_timeout 90s; # > jobTimeoutMs (60 s)
+  }
+
+  # SPA : toutes les routes renvoient index.html
+  location / {
+    try_files $uri $uri/ /index.html;
+  }
+
+  location /assets/ {
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+  }
+}

@@ -1,45 +1,81 @@
-# Rules Manager — interface (V1)
+# Rules Manager
 
-Front-end de la plateforme de gestion des règles de détection de fraude décrite dans le PRD (v0.1).
-React + TypeScript + Vite, conteneur Nginx non-root pour Cloud Run (PRD §8).
+Plateforme de gestion des règles de détection de fraude : l'équipe fraude **crée, teste et suit** ses règles
+sans passer par le mail, et mesure leur efficacité grâce au retour du prestataire (PRD v0.1).
+
+## Structure
+
+```
+.
+├── frontend/            React + TypeScript + Vite — l'IHM (Nginx non-root en production)
+│   ├── src/api/         contrat d'API (client.ts, types.ts) + implémentation mock pour la démo
+│   ├── src/pages/       écrans (liste, éditeur, détail, vue production, audit, profil)
+│   └── nginx/           conf Nginx : sert la SPA et relaie /api vers l'API
+├── backend/             Python 3.12 + FastAPI — l'API
+│   ├── app/auth.py      point UNIQUE de résolution de l'identité (get_current_user)
+│   ├── app/routers/     endpoints HTTP (mêmes chemins que frontend/src/api/client.ts)
+│   ├── app/services/    métier : règles & versions, test de requête, BigQuery, registre, audit
+│   ├── migrations/      Alembic (PostgreSQL / Cloud SQL)
+│   └── tests/           pytest (SQLite en mémoire + BigQuery factice)
+├── infra/
+│   ├── bigquery/        contrat de données §7 : rules_registry, rule_runs, rule_alerts, v_rule_performance
+│   └── cloudbuild.yaml  build → Artifact Registry → Cloud Run (+ job de migration)
+├── docker-compose.yml   environnement local complet (PostgreSQL + API + front)
+├── .github/workflows/   CI : typecheck, tests, lint, migrations sur PostgreSQL, build des images
+└── Makefile
+```
 
 ## Démarrer
 
-```bash
-cd frontend
-npm install
-npm run dev        # http://localhost:5173 — mode démo par défaut
-npm test           # tests unitaires (vitest)
-npm run build
+| Besoin | Commande |
+|---|---|
+| Voir l'IHM seule, données simulées | `cd frontend && npm install && npm run dev` → http://localhost:5173 |
+| Tout en conteneurs (PostgreSQL + API + front) | `docker compose up --build` → http://localhost:8081 |
+| Développer l'API | `make up-db` puis `make dev-api` (port 8000), et `make dev-front-http` pour le front branché dessus |
+| Tests | `make test` · lint API : `make lint` |
+
+Connexion : n'importe quel matricule à 6 chiffres ; un matricule inconnu déclenche la saisie nom / prénom.
+En mode démo, les matricules `104233`, `118870`, `120415` ont déjà des règles.
+
+### Configuration de l'API (variables `RM_*`, voir `backend/.env.example`)
+
+| Variable | Rôle | Défaut |
+|---|---|---|
+| `RM_DATABASE_URL` | base applicative | PostgreSQL local |
+| `RM_BIGQUERY_MODE` | `fake` (sans GCP) ou `real` | `fake` |
+| `RM_GCP_PROJECT`, `RM_BQ_DATASET` | projet et dataset du contrat de données | — / `fraud_rules` |
+| `RM_MAX_BYTES_BILLED`, `RM_JOB_TIMEOUT_MS`, `RM_MAX_RESULTS` | garde-fous des tests (F3) | 50 Go, 60 s, 100 |
+| `RM_MONTHLY_BUDGET_BYTES` | budget de scan mensuel par utilisateur | 1 To (Q5) |
+| `RM_NOTIFY_WEBHOOK_URL` | notification de l'équipe data à la soumission | vide = log (Q6) |
+
+## Architecture (PRD §8)
+
+```
+navigateur ──► front (Nginx, Cloud Run) ──/api──► API FastAPI (Cloud Run) ──► Cloud SQL (état applicatif)
+                                                           │
+                                                           └──► BigQuery : dry-run / tests, rules_registry,
+                                                                v_rule_performance, rule_runs  ◄── Airflow
 ```
 
-Connexion : n'importe quel matricule à 6 chiffres. Matricules de démo déjà connus : `104233`, `118870`, `120415`.
-Un matricule inconnu déclenche la saisie nom / prénom (première connexion).
+- Le front ne détient aucun credential BigQuery ; il ne parle qu'à l'API, sur la même origine (cookie de session first-party).
+- Les garde-fous de test (`maximumBytesBilled`, `jobTimeoutMs`, `maxResults`, budget) sont appliqués par l'API.
+- Les lignes renvoyées par un test ne sont jamais persistées ni journalisées : seules les métadonnées le sont.
+- L'identité (matricule) est résolue en un seul point, `backend/app/auth.py` ; le front la relit toujours via `/me`.
+  Passer au SSO (PRD §5.4) revient à réécrire `get_current_user`.
 
-## Deux modes d'API
+## Décisions prises dans ce squelette — à valider
 
-| Mode | Activation | Usage |
-|---|---|---|
-| `mock` (défaut) | — | Démo / dev sans back-end : données simulées, dry-run et exécution BigQuery simulés (`src/api/mock`). Un panneau « Simulation équipe data » permet de faire avancer le cycle de vie. |
-| `http` | `VITE_API_MODE=http` | Appelle l'API FastAPI sous `/api` (cookie de session). Le contrat attendu est dans `src/api/client.ts` (`createHttpApi`). |
-
-## Couverture du PRD
-
-| Exigence | Écran / composant |
-|---|---|
-| F1 Référentiel | `RulesListPage` (filtres statut / typologie / propriétaire / criticité, tri par date, recherche plein texte nom + description + SQL), unicité du nom vérifiée à la saisie |
-| F2 Éditeur SQL | `SqlEditor` (CodeMirror, dialecte GoogleSQL), `ParamsEditor` : détection des `@param` non déclarés / inutilisés, `@run_date` réservé |
-| F3 Test | `TestPanel` : dry-run → confirmation → échantillon (100 lignes), garde-fous affichés, refus au-delà du plafond, budget mensuel, erreurs surlignées dans l'éditeur avec lien ligne/colonne. Les lignes ne sont jamais persistées |
-| F4 Soumission | Bouton actif uniquement si le dernier test est une exécution réussie sur la version courante (empreinte requête + paramètres) |
-| F5 Cycle de vie | Statuts, création automatique d'une nouvelle version au-delà de `DRAFT`, onglet Versions avec diff SQL et diff des paramètres |
-| F6 Performance | `PerformanceDashboard` : 3 tuiles avec variation, deux courbes séparées (jamais de double axe), réticule + infobulle (souris et clavier), zone de latence prestataire, alerte échantillon faible, mentions rappel / non-additivité, table des runs |
-| F7 Vue consolidée | `ProductionPage` : tri par précision / volume, seuil « à surveiller » paramétrable, règles sans remontée sur 30 j |
-| F8 Identification | Saisie du matricule (format seul), profil serveur, préférences en `localStorage`, identité toujours relue via `/me`, journal d'audit (global et par règle) |
-
-## Points d'interprétation à valider
-
-- **Contraintes SQL « avant enregistrement »** : seul le DML/DDL bloque l'enregistrement d'un brouillon ; `order_id`, `@run_date` et les dates en dur bloquent la *soumission*. Sinon un brouillon en cours d'écriture ne pourrait pas être sauvegardé.
-- **Typologies de fraude** : liste provisoire dans `src/lib/format.ts` (PRD Q4).
-- **Budget mensuel** : 1 To en démo (PRD Q5).
-- **Identité** : `owner_email` du schéma §7.2 remplacé par le matricule (cohérent avec §5.4).
-- Les volumes affichés somment les remontées journalières ; si une commande peut être remontée plusieurs jours, le back-end devra renvoyer des totaux dédupliqués sur la période.
+- **Q1, base applicative** : PostgreSQL (recommandation du PRD §8.3). L'exposition à l'équipe data se fait par
+  `rules_registry` dans BigQuery, alimentée à l'écriture (`services/registry.py`, mode `real`). Si vous choisissez
+  une vue fédérée `EXTERNAL_QUERY`, cette synchronisation devient inutile.
+- **Statuts posés par l'équipe data** (VALIDATED, IN_PRODUCTION…) : le PRD prévoit une écriture directe en base.
+  Avec PostgreSQL comme source de vérité, l'équipe data doit écrire dans `rule_versions` (pas dans BigQuery),
+  ou un back-office minimal est nécessaire (R3). À trancher avec elle.
+- **Contraintes SQL « avant enregistrement »** : seul le DML/DDL bloque l'enregistrement d'un brouillon ;
+  `order_id`, `@run_date` et les dates en dur bloquent la soumission.
+- **Identité** : `owner_matricule` remplace `owner_email` dans `rules_registry`.
+- **@run_date pendant un test** : la veille (dernière journée complète).
+- **Déploiement** : API en ingress interne sans IAM entre front et API (le contrôle d'accès est réseau, PRD F8).
+  La topologie exacte (load balancer interne, routage `/api`) reste à arbitrer.
+- **Valeurs provisoires** : typologies de fraude (Q4, `frontend/src/lib/format.ts`), budget mensuel (Q5),
+  colonnes de la table de feedback (Q2, `infra/bigquery/04_v_rule_performance.sql`).

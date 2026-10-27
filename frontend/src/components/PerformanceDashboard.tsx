@@ -222,7 +222,7 @@ export function PerformanceDashboard({ ruleId, everInProduction }: { ruleId: str
                         <td>{fmtDate(r.runDate)}</td>
                         <td>v{r.ruleVersion}</td>
                         <td className="small">{fmtDateTime(r.startedAt)}</td>
-                        <td className="num">{r.rowsReturned === undefined ? '—' : fmtInt(r.rowsReturned)}</td>
+                        <td className="num">{r.rowsReturned == null ? '—' : fmtInt(r.rowsReturned)}</td>
                         <td>
                           {r.status === 'SUCCESS' ? (
                             <span style={{ color: 'var(--good)' }}>✓ Succès</span>

@@ -226,11 +226,11 @@ function TestsTab({ r, hash }: { r: RuleDetail; hash: string }) {
                   {t.success ? <span style={{ color: 'var(--good)' }}>✓ Succès</span> : <span style={{ color: 'var(--bad)' }}>✕ {t.error}</span>}
                 </td>
                 <td className="num small">
-                  {t.bytesProcessed !== undefined ? fmtBytes(t.bytesProcessed) : '—'}
-                  {t.estimatedCostEur !== undefined && t.phase === 'DRY_RUN' && <div className="muted">~{fmtEur(t.estimatedCostEur)}</div>}
+                  {t.bytesProcessed != null ? fmtBytes(t.bytesProcessed) : '—'}
+                  {t.estimatedCostEur != null && t.phase === 'DRY_RUN' && <div className="muted">~{fmtEur(t.estimatedCostEur)}</div>}
                 </td>
-                <td className="num small">{t.totalRows !== undefined ? fmtInt(t.totalRows) : '—'}</td>
-                <td className="num small">{t.durationMs !== undefined ? fmtDuration(t.durationMs) : '—'}</td>
+                <td className="num small">{t.totalRows != null ? fmtInt(t.totalRows) : '—'}</td>
+                <td className="num small">{t.durationMs != null ? fmtDuration(t.durationMs) : '—'}</td>
                 <td className="small nowrap">{t.byName}</td>
               </tr>
             ))}

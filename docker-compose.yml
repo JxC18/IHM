@@ -1,0 +1,40 @@
+# Environnement local complet : PostgreSQL + API (BigQuery factice) + front.
+#   docker compose up --build   →   http://localhost:8081
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: rules
+      POSTGRES_PASSWORD: rules
+      POSTGRES_DB: rules
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rules"]
+      interval: 3s
+      retries: 10
+    volumes: [pgdata:/var/lib/postgresql/data]
+
+  api:
+    build: ./backend
+    environment:
+      RM_ENV: local
+      RM_DATABASE_URL: postgresql+psycopg://rules:rules@db:5432/rules
+      RM_BIGQUERY_MODE: fake
+      RM_COOKIE_SECURE: "false"
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8080"
+    ports: ["8000:8080"]
+    depends_on:
+      db: { condition: service_healthy }
+
+  front:
+    build:
+      context: ./frontend
+      args: { VITE_API_MODE: http }
+    environment:
+      API_UPSTREAM: http://api:8080
+      API_HOST: api
+    ports: ["8081:8080"]
+    depends_on: [api]
+
+volumes:
+  pgdata:
