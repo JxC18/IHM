@@ -26,9 +26,9 @@ const GoogleSQL = SQLDialect.define({
 });
 
 const theme = EditorView.theme({
-  '&': { backgroundColor: 'var(--glass-strong, var(--surface))', color: 'var(--text)' },
+  '&': { backgroundColor: 'var(--surface)', color: 'var(--text)' },
   '.cm-content': { fontFamily: 'var(--mono)', caretColor: 'var(--text)' },
-  '.cm-gutters': { backgroundColor: 'transparent', color: 'var(--text-3)', borderRight: '1px solid var(--border)' },
+  '.cm-gutters': { backgroundColor: 'var(--surface-2)', color: 'var(--text-3)', borderRight: '1px solid var(--border)' },
   '.cm-activeLine': { backgroundColor: 'color-mix(in srgb, var(--accent-soft) 45%, transparent)' },
   '.cm-activeLineGutter': { backgroundColor: 'var(--surface-3)' },
   '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
