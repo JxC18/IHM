@@ -30,6 +30,11 @@
 
   /* graphiques */
   --series-1: #c8102e;
+  /* Une couleur par version de règle sur les courbes */
+  --version-1: #c8102e;
+  --version-2: #2a78d6;
+  --version-3: #1baf7a;
+  --version-4: #6250d6;
   --grid: #e6e5e1;
   --incomplete: rgba(111, 110, 105, 0.1);
 
@@ -69,6 +74,10 @@
     --diff-add: #17301a;
     --diff-del: #3d1b1b;
     --series-1: #f0646f;
+    --version-1: #e66767;
+    --version-2: #3987e5;
+    --version-3: #199e70;
+    --version-4: #9085e9;
     --grid: #2d2d2a;
     --incomplete: rgba(200, 200, 190, 0.07);
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -102,6 +111,10 @@
   --diff-add: #17301a;
   --diff-del: #3d1b1b;
   --series-1: #f0646f;
+    --version-1: #e66767;
+    --version-2: #3987e5;
+    --version-3: #199e70;
+    --version-4: #9085e9;
   --grid: #2d2d2a;
   --incomplete: rgba(200, 200, 190, 0.07);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -885,6 +898,27 @@ table.data tr:last-child td {
 .chart .area {
   fill: var(--series-1);
   opacity: 0.08;
+}
+.chart-legend {
+  display: flex;
+  gap: 16px;
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.chart-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.legend-key {
+  display: inline-block;
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
 }
 .chart .marker line {
   stroke: var(--text-2);

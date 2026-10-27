@@ -5,7 +5,7 @@ import { addDays, daysBetween, fmtDate, fmtDateTime, fmtInt, fmtPct, isoDate } f
 import { delta, MIN_PROCESSED_ORDERS, MIN_PROCESSING_RATE, totals } from '../lib/metrics';
 import { useAsync } from '../lib/useAsync';
 import { KpiTile } from './KpiTile';
-import { LineChart, type Point } from './LineChart';
+import { LineChart, versionColor, type Point } from './LineChart';
 import { Alert, Spinner } from './ui';
 
 type Preset = 7 | 30 | 90 | 'custom';
@@ -302,7 +302,10 @@ function VersionComparison({ versions }: { versions: VersionPerformance[] }) {
               return (
                 <tr key={r.version}>
                   <td>
-                    <strong>v{r.version}</strong>
+                    <span className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
+                      <span className="legend-key" style={{ background: versionColor(r.version) }} aria-hidden="true" />
+                      <strong>v{r.version}</strong>
+                    </span>
                   </td>
                   <td className="small">
                     {fmtDate(r.firstDate)} → {fmtDate(r.lastDate)} <span className="muted">· {fmtInt(r.days)} j</span>

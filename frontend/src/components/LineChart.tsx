@@ -25,6 +25,15 @@ interface Props {
 
 const M = { top: 14, right: 56, bottom: 26, left: 48 };
 
+/**
+ * Couleur d'une version : rouge de la marque, bleu, vert d'eau, violet (palette validée daltonisme et
+ * contraste, clair et sombre). Au-delà de 4 versions les couleurs reviennent ; le repère « vN » et la
+ * légende portent toujours le numéro.
+ */
+export function versionColor(version: number | undefined): string {
+  return version === undefined ? 'var(--series-1)' : `var(--version-${((version - 1) % 4) + 1})`;
+}
+
 function niceMax(v: number): number {
   if (v <= 0) return 1;
   const p = Math.pow(10, Math.floor(Math.log10(v)));
@@ -58,20 +67,33 @@ export function LineChart({ label, points, format, yMax, incompleteFrom, markers
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((t) => t * max);
 
   // Segments continus (une valeur nulle = pas de donnée → trou dans la courbe).
-  const path = useMemo(() => {
-    let d = '';
-    let pen = false;
+  // Un tracé par version : à chaque changement, le nouveau segment repart du dernier point de l'ancien.
+  const segments = useMemo(() => {
+    const out: { version?: number; d: string }[] = [];
+    let cur: { version?: number; d: string } | null = null;
+    let last: { i: number; v: number } | null = null;
     points.forEach((p, i) => {
       if (p.value === null) {
-        pen = false;
+        cur = null;
+        last = null;
         return;
       }
-      d += `${pen ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`;
-      pen = true;
+      const pt = `${x(i).toFixed(1)},${y(p.value).toFixed(1)}`;
+      if (!cur || cur.version !== p.version) {
+        const prev: { i: number; v: number } | null = last;
+        cur = { version: p.version, d: prev ? `M${x(prev.i).toFixed(1)},${y(prev.v).toFixed(1)}L${pt}` : `M${pt}` };
+        out.push(cur);
+      } else {
+        cur.d += `L${pt}`;
+      }
+      last = { i, v: p.value };
     });
-    return d;
+    return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [points, width, max]);
+  const versions = [...new Set(points.filter((p) => p.value !== null && p.version !== undefined).map((p) => p.version!))].sort(
+    (a, b) => a - b,
+  );
 
   const xTicks = useMemo(() => {
     if (n === 0) return [];
@@ -108,6 +130,15 @@ export function LineChart({ label, points, format, yMax, incompleteFrom, markers
 
   return (
     <div className="chart" ref={wrap}>
+      {versions.length > 1 && (
+        <ul className="chart-legend" aria-label="Versions">
+          {versions.map((v) => (
+            <li key={v}>
+              <span className="legend-key" style={{ background: versionColor(v) }} aria-hidden="true" />v{v}
+            </li>
+          ))}
+        </ul>
+      )}
       <svg
         height={height}
         role="img"
@@ -151,10 +182,12 @@ export function LineChart({ label, points, format, yMax, incompleteFrom, markers
             </g>
           );
         })}
-        <path className="line" d={path} />
+        {segments.map((s, k) => (
+          <path key={k} className="line" d={s.d} style={{ stroke: versionColor(s.version) }} />
+        ))}
         {lastIdx >= 0 && (
           <>
-            <circle className="dot" cx={x(lastIdx)} cy={y(points[lastIdx].value!)} r={4} />
+            <circle className="dot" cx={x(lastIdx)} cy={y(points[lastIdx].value!)} r={4} style={{ fill: versionColor(points[lastIdx].version) }} />
             <text className="end-label" x={x(lastIdx) + 8} y={y(points[lastIdx].value!) + 4}>
               {format(points[lastIdx].value!)}
             </text>
@@ -163,7 +196,7 @@ export function LineChart({ label, points, format, yMax, incompleteFrom, markers
         {hp && (
           <g>
             <line className="crosshair" x1={x(hover!)} x2={x(hover!)} y1={M.top} y2={M.top + ih} />
-            {hp.value !== null && <circle className="dot" cx={x(hover!)} cy={y(hp.value)} r={5} />}
+            {hp.value !== null && <circle className="dot" cx={x(hover!)} cy={y(hp.value)} r={5} style={{ fill: versionColor(hp.version) }} />}
           </g>
         )}
         <rect
@@ -183,7 +216,7 @@ export function LineChart({ label, points, format, yMax, incompleteFrom, markers
           aria-live="polite"
         >
           <div>
-            <span className="tt-key" aria-hidden="true" />
+            <span className="tt-key" aria-hidden="true" style={{ background: versionColor(hp.version) }} />
             <strong>{hp.value === null ? 'n/d' : format(hp.value)}</strong>
           </div>
           <div className="muted">{fmtDate(hp.date)}</div>
