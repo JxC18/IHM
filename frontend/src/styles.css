@@ -1,19 +1,19 @@
 :root {
   color-scheme: light;
-  --bg: #f6f6f4;
+  --bg: #ffffff;
   --surface: #ffffff;
-  --surface-2: #f0efec;
-  --surface-3: #e6e5e1;
-  --border: #dcdbd6;
+  --surface-2: #f7f6f6;
+  --surface-3: #ecebeb;
+  --border: #e4e2e2;
   --border-strong: #c3c2b7;
   --text: #17171a;
   --text-2: #52514e;
   --text-3: #6f6e69;
-  --accent: #2357b5;
-  --accent-hover: #1c4893;
-  --accent-soft: #e5edfb;
+  --accent: #c8102e;
+  --accent-hover: #a00d25;
+  --accent-soft: #fdecee;
   --on-accent: #ffffff;
-  --focus: #2a78d6;
+  --focus: #c8102e;
 
   --good: #0a7d0a;
   --good-soft: #e3f3e3;
@@ -21,18 +21,20 @@
   --warn-soft: #fdf1d6;
   --bad: #b42828;
   --bad-soft: #fbe5e5;
-  --info: #2357b5;
-  --info-soft: #e5edfb;
+  --info: #3d3c39;
+  --info-soft: #f4f3f2;
   --muted-soft: #ecebe7;
 
   --diff-add: #e3f3e3;
   --diff-del: #fbe5e5;
 
   /* graphiques */
-  --series-1: #2a78d6;
+  --series-1: #c8102e;
   --grid: #e6e5e1;
   --incomplete: rgba(111, 110, 105, 0.1);
 
+  --brand-bar: #c8102e;
+  --on-brand-bar: #ffffff;
   --radius: 8px;
   --radius-sm: 5px;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 8px rgba(0, 0, 0, 0.04);
@@ -52,26 +54,27 @@
     --text: #f0efec;
     --text-2: #c3c2b7;
     --text-3: #9c9b93;
-    --accent: #6ea2f0;
-    --accent-hover: #8db6f3;
-    --accent-soft: #1d2d47;
-    --on-accent: #0b1424;
-    --focus: #6ea2f0;
+    --accent: #f0646f;
+    --accent-hover: #f48a92;
+    --accent-soft: #3a1418;
+    --on-accent: #1a0507;
+    --focus: #f0646f;
     --good: #5cc45c;
     --good-soft: #17301a;
     --warn: #f0b440;
     --warn-soft: #382a0c;
     --bad: #ef7373;
     --bad-soft: #3d1b1b;
-    --info: #6ea2f0;
-    --info-soft: #1d2d47;
+    --info: #d6d5ce;
+    --info-soft: #262624;
     --muted-soft: #2a2a27;
     --diff-add: #17301a;
     --diff-del: #3d1b1b;
-    --series-1: #3987e5;
+    --series-1: #f0646f;
     --grid: #2d2d2a;
     --incomplete: rgba(200, 200, 190, 0.07);
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --brand-bar: #8e0b20;
   }
 }
 :root[data-theme='dark'] {
@@ -85,26 +88,27 @@
   --text: #f0efec;
   --text-2: #c3c2b7;
   --text-3: #9c9b93;
-  --accent: #6ea2f0;
-  --accent-hover: #8db6f3;
-  --accent-soft: #1d2d47;
-  --on-accent: #0b1424;
-  --focus: #6ea2f0;
+  --accent: #f0646f;
+  --accent-hover: #f48a92;
+  --accent-soft: #3a1418;
+  --on-accent: #1a0507;
+  --focus: #f0646f;
   --good: #5cc45c;
   --good-soft: #17301a;
   --warn: #f0b440;
   --warn-soft: #382a0c;
   --bad: #ef7373;
   --bad-soft: #3d1b1b;
-  --info: #6ea2f0;
-  --info-soft: #1d2d47;
+  --info: #d6d5ce;
+  --info-soft: #262624;
   --muted-soft: #2a2a27;
   --diff-add: #17301a;
   --diff-del: #3d1b1b;
-  --series-1: #3987e5;
+  --series-1: #f0646f;
   --grid: #2d2d2a;
   --incomplete: rgba(200, 200, 190, 0.07);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --brand-bar: #8e0b20;
 }
 
 * {
@@ -183,8 +187,8 @@ pre {
   gap: 24px;
   padding: 0 24px;
   height: 56px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  background: var(--brand-bar);
+  color: var(--on-brand-bar);
   position: sticky;
   top: 0;
   z-index: 20;
@@ -194,7 +198,7 @@ pre {
   align-items: center;
   gap: 8px;
   font-weight: 700;
-  color: var(--text);
+  color: var(--on-brand-bar);
   text-decoration: none;
   white-space: nowrap;
 }
@@ -215,26 +219,26 @@ pre {
   overflow-x: auto;
 }
 .nav a {
-  color: var(--text-2);
+  color: rgba(255, 255, 255, 0.86);
   text-decoration: none;
   padding: 6px 10px;
   border-radius: var(--radius-sm);
   white-space: nowrap;
 }
 .nav a:hover {
-  background: var(--surface-2);
-  color: var(--text);
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
 }
 .nav a.active {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: #ffffff;
+  color: #c8102e;
   font-weight: 600;
 }
 .userchip {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--text-2);
+  color: var(--on-brand-bar);
   text-decoration: none;
   white-space: nowrap;
 }
@@ -542,9 +546,9 @@ table.data tr:last-child td {
   color: var(--info);
 }
 .st-VALIDATED {
-  background: var(--accent-soft);
-  color: var(--accent);
-  border-color: var(--accent);
+  background: var(--surface);
+  color: var(--good);
+  border-color: var(--good);
 }
 .st-IN_PRODUCTION {
   background: var(--good-soft);
@@ -1111,4 +1115,20 @@ details summary {
   .userchip .name {
     display: none;
   }
+}
+
+/* Barre de marque rouge : éléments en blanc */
+.topbar .brand-mark {
+  background: #ffffff;
+  color: #c8102e;
+}
+.topbar .avatar {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+.topbar .userchip .muted {
+  color: rgba(255, 255, 255, 0.75);
+}
+.topbar :focus-visible {
+  outline-color: #ffffff;
 }
