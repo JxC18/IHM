@@ -175,97 +175,12 @@ pre {
   top: 8px;
 }
 
-/* ---------- Layout ---------- */
-.app {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-.topbar {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  padding: 0 24px;
-  height: 56px;
-  background: var(--brand-bar);
-  color: var(--on-brand-bar);
-  position: sticky;
-  top: 0;
-  z-index: 20;
-}
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 700;
-  color: var(--on-brand-bar);
-  text-decoration: none;
-  white-space: nowrap;
-}
-.brand-mark {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  background: var(--accent);
-  color: var(--on-accent);
-  display: grid;
-  place-items: center;
-  font-size: 13px;
-}
-.nav {
-  display: flex;
-  gap: 2px;
-  flex: 1;
-  overflow-x: auto;
-}
-.nav a {
-  color: rgba(255, 255, 255, 0.86);
-  text-decoration: none;
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
-  white-space: nowrap;
-}
-.nav a:hover {
-  background: rgba(255, 255, 255, 0.14);
-  color: #ffffff;
-}
-.nav a.active {
-  background: #ffffff;
-  color: #c8102e;
-  font-weight: 600;
-}
-.userchip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--on-brand-bar);
-  text-decoration: none;
-  white-space: nowrap;
-}
-.avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--surface-3);
-  color: var(--text);
-  display: grid;
-  place-items: center;
-  font-size: 12px;
-  font-weight: 650;
-}
-.banner {
-  padding: 6px 24px;
-  font-size: 12.5px;
-  background: var(--warn-soft);
-  color: var(--text);
-  border-bottom: 1px solid var(--border);
-}
+/* ---------- Layout : voir « Barre latérale » en fin de fichier ---------- */
 main {
-  flex: 1;
   width: 100%;
   max-width: 1320px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 28px 32px;
 }
 .page-head {
   display: flex;
@@ -1108,29 +1023,6 @@ details summary {
   main {
     padding: 16px;
   }
-  .topbar {
-    padding: 0 16px;
-    gap: 12px;
-  }
-  .userchip .name {
-    display: none;
-  }
-}
-
-/* Barre de marque rouge : éléments en blanc */
-.topbar .brand-mark {
-  background: #ffffff;
-  color: #c8102e;
-}
-.topbar .avatar {
-  background: rgba(255, 255, 255, 0.2);
-  color: #ffffff;
-}
-.topbar .userchip .muted {
-  color: rgba(255, 255, 255, 0.75);
-}
-.topbar :focus-visible {
-  outline-color: #ffffff;
 }
 
 /* =====================================================================
@@ -1216,24 +1108,6 @@ body {
   border-radius: 22px;
 }
 
-/* Barre du haut : verre rouge */
-.topbar {
-  background: var(--bar-glass);
-  -webkit-backdrop-filter: var(--glass-blur);
-  backdrop-filter: var(--glass-blur);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.22);
-  box-shadow: 0 6px 24px rgba(120, 10, 30, 0.18);
-}
-.nav a {
-  border-radius: 999px;
-  padding: 6px 14px;
-}
-.banner {
-  background: color-mix(in srgb, var(--warn-soft) 72%, transparent);
-  -webkit-backdrop-filter: var(--glass-blur);
-  backdrop-filter: var(--glass-blur);
-  border-bottom: 1px solid var(--glass-border);
-}
 
 /* Champs et contrôles */
 input[type='text'],
@@ -1370,13 +1244,281 @@ table.data tbody tr:hover {
   .alert,
   .login-card,
   .tooltip,
-  .topbar,
+  .sidebar,
   .sql-editor {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     background: var(--surface);
   }
-  .topbar {
+  .sidebar {
     background: var(--brand-bar);
+  }
+}
+
+/* =====================================================================
+   Barre latérale en verre rouge, flottante, repliable
+   ===================================================================== */
+.app {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  transition: grid-template-columns 0.2s ease;
+}
+.app.collapsed {
+  grid-template-columns: 88px minmax(0, 1fr);
+}
+.content {
+  min-width: 0;
+}
+.sidebar {
+  position: sticky;
+  top: 12px;
+  height: calc(100vh - 24px);
+  margin: 12px 0 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 18px 14px;
+  border-radius: 24px;
+  color: #ffffff;
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 45%),
+    var(--bar-glass);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow: 0 12px 40px rgba(120, 10, 30, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  overflow: hidden;
+  z-index: 20;
+}
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 4px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 15px;
+  color: #ffffff;
+  text-decoration: none;
+  white-space: nowrap;
+  min-width: 0;
+}
+.brand-mark {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #c8102e;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  font-weight: 800;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+.login-card .brand-mark {
+  background: var(--accent);
+  color: #ffffff;
+}
+.sidebar-toggle {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  cursor: pointer;
+}
+.sidebar-toggle:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.nav-section {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.72);
+  padding: 12px 12px 4px;
+  white-space: nowrap;
+}
+.nav a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  color: rgba(255, 255, 255, 0.9);
+  text-decoration: none;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.nav a svg {
+  flex: none;
+}
+.nav a:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+.nav a.active {
+  background: rgba(255, 255, 255, 0.95);
+  color: #c8102e;
+  font-weight: 650;
+  box-shadow: 0 6px 18px rgba(80, 0, 15, 0.18);
+}
+.sidebar-demo {
+  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(253, 241, 214, 0.92);
+  color: #3d2a00;
+  font-weight: 600;
+}
+.userchip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  text-decoration: none;
+  white-space: nowrap;
+  min-width: 0;
+}
+.userchip:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+.avatar {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--text);
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+.sidebar .avatar {
+  background: rgba(255, 255, 255, 0.95);
+  color: #c8102e;
+}
+.user-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+.user-meta .user-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.user-meta .mono {
+  color: rgba(255, 255, 255, 0.75);
+}
+.sidebar :focus-visible {
+  outline-color: #ffffff;
+}
+
+/* Replié : icônes seules (les libellés restent accessibles via title + texte masqué) */
+.app.collapsed .sidebar {
+  padding: 18px 12px;
+}
+.app.collapsed .nav-label,
+.app.collapsed .nav-section {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+.app.collapsed .sidebar-head {
+  flex-direction: column;
+  padding: 0;
+}
+.app.collapsed .nav a,
+.app.collapsed .userchip {
+  justify-content: center;
+  padding: 10px 0;
+}
+.app.collapsed .nav {
+  gap: 6px;
+  padding-top: 8px;
+}
+
+/* Petits écrans : la barre latérale devient une barre supérieure en verre */
+@media (max-width: 900px) {
+  .app,
+  .app.collapsed {
+    display: block;
+  }
+  .sidebar,
+  .app.collapsed .sidebar {
+    position: sticky;
+    top: 0;
+    height: auto;
+    margin: 0;
+    border-radius: 0 0 18px 18px;
+    flex-direction: row;
+    align-items: center;
+    padding: 8px 12px;
+    gap: 8px;
+  }
+  .sidebar-toggle,
+  .nav-section,
+  .sidebar-demo,
+  .sidebar .nav-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .sidebar-head {
+    padding: 0;
+  }
+  .nav,
+  .app.collapsed .nav {
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 0;
+  }
+  .nav a,
+  .app.collapsed .nav a {
+    padding: 8px 10px;
+  }
+  .userchip,
+  .app.collapsed .userchip {
+    padding: 4px;
+    background: transparent;
+    border: none;
+  }
+  main {
+    padding: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app {
+    transition: none;
   }
 }
