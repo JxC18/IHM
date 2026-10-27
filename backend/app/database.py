@@ -7,10 +7,8 @@ changera la source du matricule, pas ces tables.
 import uuid
 from collections.abc import Iterator
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy import (
-    JSON,
     BigInteger,
     Boolean,
     DateTime,
@@ -105,7 +103,6 @@ class RuleVersion(Base):
     criticality: Mapped[str] = mapped_column(String(10))
     schedule: Mapped[str] = mapped_column(String(10))
     sql_query: Mapped[str] = mapped_column(Text)
-    parameters: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
     status: Mapped[str] = mapped_column(String(20), index=True)
     rejection_reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

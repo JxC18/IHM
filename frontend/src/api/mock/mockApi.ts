@@ -152,7 +152,7 @@ export function createMockApi(): Api {
     if (missing.length) throw new ApiError(422, `Champs obligatoires manquants : ${missing.map((m) => m[1]).join(', ')}.`);
     if (!nameAvailable(input.name, excludeRuleId)) throw new ApiError(409, `Une règle nommée « ${input.name.trim()} » existe déjà.`, 'NAME_TAKEN');
     // DML/DDL rejetés dès l'enregistrement ; les autres contraintes bloquent la soumission.
-    const dry = simulateDryRun(input.sqlQuery, input.parameters, GUARDRAILS, 'check');
+    const dry = simulateDryRun(input.sqlQuery, GUARDRAILS, 'check');
     if (dry.statementType && dry.statementType !== 'SELECT') {
       throw new ApiError(422, `Instruction ${dry.statementType} refusée : seule une instruction SELECT est autorisée.`, 'NOT_SELECT');
     }
@@ -216,13 +216,13 @@ export function createMockApi(): Api {
   const month = () => new Date().toISOString().slice(0, 7);
   const used = (m: string) => db.usage[m]?.[month()] ?? 0;
 
-  function recordTest(u: User, ruleId: string | undefined, sql: string, params: RuleInput['parameters'], t: Partial<TestRecord> & Pick<TestRecord, 'phase' | 'success'>): TestRecord {
+  function recordTest(u: User, ruleId: string | undefined, sql: string, t: Partial<TestRecord> & Pick<TestRecord, 'phase' | 'success'>): TestRecord {
     const r = ruleId ? findRule(ruleId) : undefined;
     const rec: TestRecord = {
       id: uid(),
       ruleId,
       version: r ? current(r).version : undefined,
-      queryHash: queryHash(sql, params),
+      queryHash: queryHash(sql),
       at: now(),
       byMatricule: u.matricule,
       byName: fullName(u),
@@ -368,7 +368,7 @@ export function createMockApi(): Api {
         };
         r.versions.push(v);
         // Les tests lancés depuis l'éditeur portaient sur ce nouveau contenu : on les rattache à la nouvelle version.
-        const h = queryHash(v.sqlQuery, v.parameters);
+        const h = queryHash(v.sqlQuery);
         for (const test of db.tests) {
           if (test.ruleId === id && test.version === cur.version && test.queryHash === h && Date.now() - new Date(test.at).getTime() < 3600_000) {
             test.version = v.version;
@@ -393,13 +393,13 @@ export function createMockApi(): Api {
       const u = currentUser();
       return { month: month(), bytesUsed: used(u.matricule), budgetBytes: GUARDRAILS.monthlyBudgetBytes };
     },
-    async dryRun(sql, params, ruleId) {
+    async dryRun(sql, ruleId) {
       await delay(400, 900);
       const u = currentUser();
       const testId = uid();
-      const res = simulateDryRun(sql, params, GUARDRAILS, testId);
+      const res = simulateDryRun(sql, GUARDRAILS, testId);
       const firstError = res.issues.find((i) => i.severity === 'error');
-      const rec = recordTest(u, ruleId, sql, params, {
+      const rec = recordTest(u, ruleId, sql, {
         phase: 'DRY_RUN',
         success: res.ok,
         bytesProcessed: res.bytesProcessed,
@@ -408,9 +408,9 @@ export function createMockApi(): Api {
       });
       return { ...res, testId: rec.id };
     },
-    async execute(sql, params, ruleId) {
+    async execute(sql, ruleId) {
       const u = currentUser();
-      const dry = simulateDryRun(sql, params, GUARDRAILS, 'pre');
+      const dry = simulateDryRun(sql, GUARDRAILS, 'pre');
       if (!dry.ok) throw new ApiError(422, 'Le dry-run doit réussir avant toute exécution.');
       if (dry.exceedsBytesLimit) {
         throw new ApiError(
@@ -423,10 +423,10 @@ export function createMockApi(): Api {
         throw new ApiError(429, 'Budget mensuel de scan atteint : exécution bloquée jusqu’au mois prochain.', 'BUDGET');
       }
       await delay(900, 1800);
-      const res = simulateExecution(sql, params, GUARDRAILS, dry, 'exec');
+      const res = simulateExecution(sql, GUARDRAILS, dry, 'exec');
       db.usage[u.matricule] = { ...db.usage[u.matricule], [month()]: used(u.matricule) + res.bytesProcessed };
       // Seules les métadonnées sont conservées, jamais les lignes (PRD §10).
-      const rec = recordTest(u, ruleId, sql, params, {
+      const rec = recordTest(u, ruleId, sql, {
         phase: 'EXECUTION',
         success: true,
         bytesProcessed: res.bytesProcessed,
@@ -443,7 +443,7 @@ export function createMockApi(): Api {
       const cur = current(r);
       if (cur.status !== 'DRAFT') throw new ApiError(409, 'Seule une version en brouillon peut être soumise.');
       const last = lastTestFor(id, cur.version);
-      if (!last || !last.success || last.phase !== 'EXECUTION' || last.queryHash !== queryHash(cur.sqlQuery, cur.parameters)) {
+      if (!last || !last.success || last.phase !== 'EXECUTION' || last.queryHash !== queryHash(cur.sqlQuery)) {
         throw new ApiError(409, 'Le dernier test doit être une exécution réussie portant sur la version courante de la requête.', 'TEST_REQUIRED');
       }
       cur.status = 'SUBMITTED';

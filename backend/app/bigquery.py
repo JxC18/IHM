@@ -7,7 +7,6 @@ Les garde-fous F3 sont posés ici, côté serveur, donc non contournables depuis
 `maximum_bytes_billed`, `job_timeout_ms`, `max_results`.
 """
 
-import json
 import logging
 import re
 import time
@@ -18,7 +17,7 @@ from typing import Any, Protocol
 
 from app.core import Settings, get_settings
 from app.database import RuleVersion
-from app.schemas import Column, DailyPerformance, RuleParameter, RuleRun
+from app.schemas import Column, DailyPerformance, RuleRun
 
 log = logging.getLogger(__name__)
 
@@ -63,9 +62,9 @@ class ProductionTotals:
 
 
 class BigQueryGateway(Protocol):
-    def dry_run(self, sql: str, params: list[RuleParameter], run_date: date) -> DryRunMeta: ...
+    def dry_run(self, sql: str, run_date: date) -> DryRunMeta: ...
 
-    def execute(self, sql: str, params: list[RuleParameter], run_date: date) -> ExecMeta: ...
+    def execute(self, sql: str, run_date: date) -> ExecMeta: ...
 
     def daily_performance(self, rule_id: str, start: date, end: date) -> list[DailyPerformance]: ...
 
@@ -83,21 +82,6 @@ class BigQueryGateway(Protocol):
 # ---------------------------------------------------------------------------
 
 
-def _bq_param(p: RuleParameter):
-    from google.cloud import bigquery
-
-    v: Any = p.default
-    if p.type == "INT64":
-        v = int(v) if v != "" else None
-    elif p.type == "FLOAT64":
-        v = float(v) if v != "" else None
-    elif p.type == "BOOL":
-        v = v.lower() in ("true", "1", "oui") if v != "" else None
-    elif p.type == "DATE":
-        v = date.fromisoformat(v) if v else None
-    return bigquery.ScalarQueryParameter(p.name, p.type, v)
-
-
 class RealBigQueryGateway:
     def __init__(self, settings: Settings):
         from google.cloud import bigquery
@@ -107,26 +91,27 @@ class RealBigQueryGateway:
         self.client = bigquery.Client(project=settings.gcp_project or None, location=settings.bq_location)
         self.ds = f"`{self.client.project}.{settings.bq_dataset}`"
 
-    def _config(self, params: list[RuleParameter], run_date: date, **kw):
-        qp = [_bq_param(p) for p in params] + [self._bq.ScalarQueryParameter("run_date", "DATE", run_date)]
+    def _config(self, run_date: date, **kw):
+        # @run_date est le seul paramètre de requête (les seuils sont écrits dans le SQL).
+        qp = [self._bq.ScalarQueryParameter("run_date", "DATE", run_date)]
         return self._bq.QueryJobConfig(
             query_parameters=qp, use_query_cache=False, labels={"app": "rules-manager"}, **kw
         )
 
-    def dry_run(self, sql, params, run_date):
+    def dry_run(self, sql, run_date):
         from google.api_core.exceptions import GoogleAPICallError
 
         try:
-            job = self.client.query(sql, job_config=self._config(params, run_date, dry_run=True))
+            job = self.client.query(sql, job_config=self._config(run_date, dry_run=True))
         except GoogleAPICallError as e:
             raise QueryError(getattr(e, "message", str(e))) from e
         schema = [Column(name=f.name, type=f.field_type) for f in (job.schema or [])]
         return DryRunMeta(job.statement_type or "UNKNOWN", job.total_bytes_processed or 0, schema)
 
-    def execute(self, sql, params, run_date):
+    def execute(self, sql, run_date):
         from google.api_core.exceptions import GoogleAPICallError
 
-        cfg = self._config(params, run_date, maximum_bytes_billed=self.settings.max_bytes_billed)
+        cfg = self._config(run_date, maximum_bytes_billed=self.settings.max_bytes_billed)
         cfg.job_timeout_ms = self.settings.job_timeout_ms
         start = time.monotonic()
         try:
@@ -235,7 +220,6 @@ class BigQueryRegistry:
             P("criticality", "STRING", v.criticality),
             P("schedule", "STRING", v.schedule),
             P("sql_query", "STRING", v.sql_query),
-            P("parameters", "STRING", json.dumps(v.parameters)),
             P("status", "STRING", v.status),
             P("owner_matricule", "STRING", owner_matricule),
             P("created_at", "TIMESTAMP", v.created_at),
@@ -248,12 +232,12 @@ class BigQueryRegistry:
         WHEN MATCHED THEN UPDATE SET
           name = @name, description = @description, fraud_typology = @fraud_typology,
           criticality = @criticality, schedule = @schedule, sql_query = @sql_query,
-          parameters = PARSE_JSON(@parameters), status = @status, updated_at = @updated_at
+          status = @status, updated_at = @updated_at
         WHEN NOT MATCHED THEN INSERT
           (rule_id, version, name, description, fraud_typology, criticality, schedule, sql_query,
-           parameters, status, owner_matricule, created_at, updated_at)
+           status, owner_matricule, created_at, updated_at)
         VALUES (@rule_id, @version, @name, @description, @fraud_typology, @criticality, @schedule,
-                @sql_query, PARSE_JSON(@parameters), @status, @owner_matricule, @created_at, @updated_at)
+                @sql_query, @status, @owner_matricule, @created_at, @updated_at)
         """
         self.client.query(sql, job_config=self._bq.QueryJobConfig(query_parameters=params)).result()
 
@@ -282,7 +266,7 @@ class FakeBigQueryGateway:
     performance: dict[str, list[DailyPerformance]] = field(default_factory=dict)
     published: list[tuple[str, int, str]] = field(default_factory=list)
 
-    def dry_run(self, sql, params, run_date):
+    def dry_run(self, sql, run_date):
         if self.next_error:
             err, self.next_error = self.next_error, None
             raise err
@@ -299,8 +283,8 @@ class FakeBigQueryGateway:
         )
         return DryRunMeta(stype, self.bytes_processed, cols)
 
-    def execute(self, sql, params, run_date):
-        meta = self.dry_run(sql, params, run_date)
+    def execute(self, sql, run_date):
+        meta = self.dry_run(sql, run_date)
         cols = [c.name for c in meta.schema]
         rows = [{c: f"{c}-{i}" for c in cols} for i in range(5)]
         return ExecMeta(cols, rows, total_rows=5, duration_ms=1200, bytes_processed=meta.bytes_processed)

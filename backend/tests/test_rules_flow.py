@@ -6,8 +6,7 @@ SQL = """SELECT
   o.order_id
 FROM `sales.orders` o
 WHERE o.order_date = @run_date
-  AND o.amount_eur > @seuil"""
-PARAMS = [{"name": "seuil", "type": "FLOAT64", "default": "500", "description": "Montant"}]
+  AND o.amount_eur > 500"""
 RULE = {
     "name": "Panier élevé",
     "description": "Commandes au-dessus du seuil",
@@ -15,7 +14,6 @@ RULE = {
     "criticality": "HIGH",
     "schedule": "DAILY",
     "sqlQuery": SQL,
-    "parameters": PARAMS,
 }
 
 
@@ -29,9 +27,9 @@ def test_parcours_complet_creation_test_soumission(client, bq):
     r = client.post(f"/rules/{rid}/submit")
     assert r.status_code == 409 and r.json()["code"] == "TEST_REQUIRED"
 
-    dry = client.post("/query/dry-run", json={"sql": SQL, "parameters": PARAMS, "ruleId": rid}).json()
+    dry = client.post("/query/dry-run", json={"sql": SQL, "ruleId": rid}).json()
     assert dry["ok"] is True, dry["issues"]
-    ex = client.post("/query/execute", json={"sql": SQL, "parameters": PARAMS, "ruleId": rid}).json()
+    ex = client.post("/query/execute", json={"sql": SQL, "ruleId": rid}).json()
     assert ex["ok"] is True and ex["totalRows"] == 5
 
     r = client.post(f"/rules/{rid}/submit")
@@ -56,14 +54,14 @@ def test_parcours_complet_creation_test_soumission(client, bq):
 def test_test_sur_ancienne_requete_ne_permet_pas_la_soumission(client):
     login(client)
     rid = client.post("/rules", json=RULE).json()["ruleId"]
-    client.post("/query/execute", json={"sql": SQL, "parameters": PARAMS, "ruleId": rid})
+    client.post("/query/execute", json={"sql": SQL, "ruleId": rid})
     client.put(f"/rules/{rid}", json={**RULE, "sqlQuery": SQL + "\n  AND o.item_count > 1"})
     assert client.post(f"/rules/{rid}/submit").status_code == 409
 
 
 def test_tests_avant_premier_enregistrement_sont_rattaches(client):
     login(client)
-    client.post("/query/execute", json={"sql": SQL, "parameters": PARAMS})
+    client.post("/query/execute", json={"sql": SQL})
     rid = client.post("/rules", json=RULE).json()["ruleId"]
     assert client.post(f"/rules/{rid}/submit").status_code == 200
 
@@ -88,28 +86,28 @@ def test_dry_run_controles(client, bq):
     bq.next_dry_run = DryRunMeta("SELECT", 10**9, [Column(name="customer_id", type="STRING")])
     sql = "SELECT customer_id FROM t WHERE d = DATE '2026-01-01' AND x = @inconnu"
     codes = {i["code"] for i in client.post("/query/dry-run", json={"sql": sql}).json()["issues"]}
-    assert {"NO_ORDER_ID", "HARDCODED_DATE", "PARAM_UNDECLARED", "RUN_DATE_MISSING"} <= codes
+    assert {"NO_ORDER_ID", "HARDCODED_DATE", "PARAM_NOT_ALLOWED", "RUN_DATE_MISSING"} <= codes
 
 
 def test_erreur_bigquery_avec_position(client, bq):
     login(client)
     bq.next_error = QueryError("Not found: Table p.sales.nope was not found at [3:6]")
-    issue = client.post("/query/dry-run", json={"sql": SQL, "parameters": PARAMS}).json()["issues"][0]
+    issue = client.post("/query/dry-run", json={"sql": SQL}).json()["issues"][0]
     assert (issue["code"], issue["line"], issue["column"]) == ("BIGQUERY", 3, 6)
 
 
 def test_plafond_de_volume(client, bq):
     login(client)
     bq.bytes_processed = 60 * 10**9
-    dry = client.post("/query/dry-run", json={"sql": SQL, "parameters": PARAMS}).json()
+    dry = client.post("/query/dry-run", json={"sql": SQL}).json()
     assert dry["exceedsBytesLimit"] is True
-    r = client.post("/query/execute", json={"sql": SQL, "parameters": PARAMS})
+    r = client.post("/query/execute", json={"sql": SQL})
     assert r.status_code == 422 and r.json()["code"] == "BYTES_LIMIT"
 
 
 def test_budget_comptabilise_les_executions(client):
     login(client)
-    client.post("/query/execute", json={"sql": SQL, "parameters": PARAMS})
+    client.post("/query/execute", json={"sql": SQL})
     assert client.get("/me/budget").json()["bytesUsed"] == 6 * 10**9
 
 

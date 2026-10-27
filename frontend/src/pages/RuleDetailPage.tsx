@@ -3,7 +3,6 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { RuleDetail, RuleVersion } from '../api/types';
 import { SqlEditor } from '../components/SqlEditor';
-import { ParamsEditor } from '../components/ParamsEditor';
 import { DiffView } from '../components/DiffView';
 import { PerformanceDashboard } from '../components/PerformanceDashboard';
 import { Alert, CriticalityBadge, Lifecycle, Spinner, StatusBadge } from '../components/ui';
@@ -34,7 +33,7 @@ export function RuleDetailPage() {
   if (!rule.data) return <Spinner />;
   const r = rule.data;
 
-  const hash = queryHash(r.sqlQuery, r.parameters);
+  const hash = queryHash(r.sqlQuery);
   const last = r.lastTest;
   const testOk = !!last && last.success && last.phase === 'EXECUTION' && last.queryHash === hash;
   const canSubmit = r.status === 'DRAFT' && testOk;
@@ -181,8 +180,6 @@ function DefinitionTab({ r }: { r: RuleDetail }) {
         </div>
         <div className="card-pad stack">
           <SqlEditor value={r.sqlQuery} readOnly ariaLabel="Requête SQL (lecture seule)" />
-          <h3>Paramètres</h3>
-          <ParamsEditor sql={r.sqlQuery} value={r.parameters} readOnly />
         </div>
       </section>
     </div>
@@ -331,39 +328,11 @@ function VersionsTab({ r }: { r: RuleDetail }) {
           </div>
           <div className="card-pad stack">
             <DiffView before={va.sqlQuery} after={vb.sqlQuery} />
-            <ParamChanges a={va} b={vb} />
           </div>
         </section>
       ) : (
         <p className="small muted">Une seule version : rien à comparer.</p>
       )}
-    </div>
-  );
-}
-
-function ParamChanges({ a, b }: { a: RuleVersion; b: RuleVersion }) {
-  const names = [...new Set([...a.parameters, ...b.parameters].map((p) => p.name))];
-  const changes = names
-    .map((n) => {
-      const pa = a.parameters.find((p) => p.name === n);
-      const pb = b.parameters.find((p) => p.name === n);
-      if (!pa) return `@${n} ajouté (${pb!.type}, défaut ${pb!.default || '—'})`;
-      if (!pb) return `@${n} supprimé`;
-      if (pa.type !== pb.type || pa.default !== pb.default) return `@${n} : ${pa.type} ${pa.default || '—'} → ${pb.type} ${pb.default || '—'}`;
-      return null;
-    })
-    .filter(Boolean);
-  if (!changes.length) return <p className="small muted" style={{ margin: 0 }}>Paramètres identiques.</p>;
-  return (
-    <div>
-      <h3>Paramètres modifiés</h3>
-      <ul className="small" style={{ margin: '4px 0 0', paddingLeft: 18 }}>
-        {changes.map((c) => (
-          <li key={c} className="mono">
-            {c}
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }

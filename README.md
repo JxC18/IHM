@@ -19,7 +19,7 @@ sans passer par le mail, et mesure leur efficacité grâce au retour du prestata
 │   ├── app/auth.py      identification par matricule ; point UNIQUE de résolution de l'identité
 │   ├── app/rules.py     règles : liste, création, versions, soumission (F1, F4, F5)
 │   ├── app/query.py     test d'une requête : dry-run, exécution, garde-fous, budget (F3)
-│   ├── app/sql_checks.py contrôles du SQL non couverts par BigQuery (paramètres, @run_date…)
+│   ├── app/sql_checks.py contrôles du SQL non couverts par BigQuery (@run_date, dates en dur…)
 │   ├── app/pilotage.py  indicateurs de performance et journal d'audit, en lecture (F6, F7, F8)
 │   ├── app/bigquery.py  tout l'accès BigQuery (réel ou factice), dont la publication dans rules_registry
 │   ├── migrations/      Alembic (PostgreSQL / Cloud SQL)
@@ -209,8 +209,15 @@ navigateur ──► front (Nginx, Cloud Run) ──/api──► API FastAPI (C
   ou un back-office minimal est nécessaire (R3). À trancher avec elle.
 - **Contraintes SQL « avant enregistrement »** : seul le DML/DDL bloque l'enregistrement d'un brouillon ;
   `order_id`, `@run_date` et les dates en dur bloquent la soumission.
+- **Paramètres (écart au PRD F2)** : pas de paramètres déclarés. Les seuils s'écrivent en dur dans le SQL
+  (`amount_eur >= 500`) et leur évolution se lit dans le comparatif entre versions. `@run_date` est le seul
+  paramètre : Airflow fournit la date du run sans modifier la requête, ce qui permet relances et rattrapages.
+  `rules_registry` n'a donc pas de colonne `parameters`.
 - **Identité** : `owner_matricule` remplace `owner_email` dans `rules_registry`.
-- **@run_date pendant un test** : la veille (dernière journée complète).
+- **@run_date pendant un test** : la veille (dernière journée complète), affichée dans le bloc de test.
+  La période réellement couverte dépend de la requête (ex. fenêtre de 7 jours avant `@run_date`).
+- **Règles horaires** : `@run_date` est une date sans heure ; une fréquence horaire demandera une fenêtre
+  (`@run_start` / `@run_end`) à définir avec l'équipe data.
 - **Déploiement** : API en ingress interne sans IAM entre front et API (le contrôle d'accès est réseau, PRD F8).
   La topologie exacte (load balancer interne, routage `/api`) reste à arbitrer.
 - **Valeurs provisoires** : typologies de fraude (Q4, `frontend/src/lib/format.ts`), budget mensuel (Q5),

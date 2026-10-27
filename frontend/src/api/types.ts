@@ -18,16 +18,6 @@ export type Criticality = (typeof CRITICALITIES)[number];
 export const SCHEDULES = ['DAILY', 'HOURLY', 'WEEKLY'] as const;
 export type Schedule = (typeof SCHEDULES)[number];
 
-export const PARAM_TYPES = ['STRING', 'INT64', 'FLOAT64', 'DATE', 'TIMESTAMP', 'BOOL'] as const;
-export type ParamType = (typeof PARAM_TYPES)[number];
-
-export interface RuleParameter {
-  name: string;
-  type: ParamType;
-  default: string;
-  description: string;
-}
-
 export interface User {
   matricule: string;
   firstName: string;
@@ -42,7 +32,6 @@ export interface RuleInput {
   criticality: Criticality;
   schedule: Schedule;
   sqlQuery: string;
-  parameters: RuleParameter[];
 }
 
 export interface RuleVersion extends RuleInput {
@@ -106,6 +95,8 @@ export interface DryRunResult {
   issues: SqlIssue[];
   /** Dépassement du plafond : l'exécution sera refusée. */
   exceedsBytesLimit: boolean;
+  /** Valeur de @run_date utilisée pour le test (la veille). */
+  runDate: string;
   testId: string;
 }
 
@@ -118,6 +109,7 @@ export interface ExecutionResult {
   totalRows: number;
   durationMs: number;
   bytesProcessed: number;
+  runDate: string;
   testId: string;
 }
 

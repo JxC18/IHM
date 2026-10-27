@@ -16,7 +16,7 @@ const LIST_FILTERS: RuleFilters = { q: '', status: '', typology: '', owner: '', 
 /** Brouillon dont la dernière exécution de test réussie porte sur la requête actuelle. */
 function readyToSubmit(r: RuleSummary): boolean {
   const t = r.lastTest;
-  return r.status === 'DRAFT' && !!t && t.success && t.phase === 'EXECUTION' && t.queryHash === queryHash(r.sqlQuery, r.parameters);
+  return r.status === 'DRAFT' && !!t && t.success && t.phase === 'EXECUTION' && t.queryHash === queryHash(r.sqlQuery);
 }
 
 export function OverviewPage() {

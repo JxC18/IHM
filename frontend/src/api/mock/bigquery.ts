@@ -2,7 +2,7 @@
 // métadonnées du dry-run (`statementType`, schéma de sortie) ; ici on les
 // imite par une analyse grossière du texte, suffisante pour exercer l'IHM.
 
-import type { DryRunResult, ExecutionResult, Guardrails, RuleParameter, SqlIssue } from '../types';
+import type { DryRunResult, ExecutionResult, Guardrails, SqlIssue } from '../types';
 import { checkParams, maskSql, offsetToLineCol, queryHash } from '../../lib/sql';
 
 interface CatalogTable {
@@ -127,7 +127,7 @@ interface Analysis {
   outputSchema: { name: string; type: string }[];
 }
 
-function analyse(sql: string, params: RuleParameter[]): Analysis {
+function analyse(sql: string): Analysis {
   const issues: SqlIssue[] = [];
   const masked = maskSql(sql);
   const trimmedStart = masked.search(/\S/);
@@ -198,8 +198,8 @@ function analyse(sql: string, params: RuleParameter[]): Analysis {
     );
   }
 
-  // Paramètres (cohérence + @run_date)
-  issues.push(...checkParams(sql, params));
+  // Paramètres : @run_date seul
+  issues.push(...checkParams(sql));
 
   // Schéma de sortie : la dernière projection SELECT de niveau 0
   const depth = depthMap(masked);
@@ -254,12 +254,20 @@ function rng(seed: string) {
   };
 }
 
-export function simulateDryRun(sql: string, params: RuleParameter[], g: Guardrails, testId: string): DryRunResult {
-  const a = analyse(sql, params);
+/** @run_date pendant un test : la veille, dernière journée complète. */
+export function testRunDate(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export function simulateDryRun(sql: string, g: Guardrails, testId: string): DryRunResult {
+  const a = analyse(sql);
+  const runDate = testRunDate();
   const ok = !a.issues.some((i) => i.severity === 'error');
-  if (!ok) return { ok, statementType: a.statementType, issues: a.issues, exceedsBytesLimit: false, testId };
+  if (!ok) return { ok, statementType: a.statementType, issues: a.issues, exceedsBytesLimit: false, runDate, testId };
   // Filtrer sur @run_date élague les partitions : on ne scanne qu'une fraction.
-  const r = rng(queryHash(sql, params));
+  const r = rng(queryHash(sql));
   const bytesProcessed = Math.round(a.tables.reduce((s, t) => s + CATALOG[t].bytes, 0) * (0.55 + r() * 0.5));
   return {
     ok,
@@ -269,16 +277,17 @@ export function simulateDryRun(sql: string, params: RuleParameter[], g: Guardrai
     estimatedCostEur: (bytesProcessed / 1e12) * g.costPerTbEur,
     issues: a.issues,
     exceedsBytesLimit: bytesProcessed > g.maxBytesBilled,
+    runDate,
     testId,
   };
 }
 
 const FIRST = ['A', 'B', 'C', 'D', 'E', 'F'];
 
-export function simulateExecution(sql: string, params: RuleParameter[], g: Guardrails, dry: DryRunResult, testId: string): ExecutionResult {
-  const r = rng(queryHash(sql, params) + ':exec');
-  // Plus les seuils numériques sont élevés, moins la règle remonte de lignes.
-  const numeric = params.filter((p) => ['INT64', 'FLOAT64'].includes(p.type)).reduce((s, p) => s + (Number(p.default) || 0), 0);
+export function simulateExecution(sql: string, g: Guardrails, dry: DryRunResult, testId: string): ExecutionResult {
+  const r = rng(queryHash(sql) + ':exec');
+  // Plus les seuils (« > 500 », « >= 3 ») sont élevés, moins la règle remonte de lignes.
+  const numeric = [...maskSql(sql).matchAll(/>=?\s*(\d+(?:\.\d+)?)/g)].reduce((s, m) => s + Number(m[1]), 0);
   const totalRows = Math.max(0, Math.round((400 + r() * 2600) / (1 + numeric / 400)));
   const columns = (dry.outputSchema ?? []).map((c) => c.name);
   const n = Math.min(totalRows, g.maxResults);
@@ -320,6 +329,7 @@ export function simulateExecution(sql: string, params: RuleParameter[], g: Guard
     totalRows,
     durationMs: Math.round(1500 + r() * 9000),
     bytesProcessed: dry.bytesProcessed ?? 0,
+    runDate: dry.runDate,
     testId,
   };
 }

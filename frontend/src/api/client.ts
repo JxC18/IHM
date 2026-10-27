@@ -39,8 +39,8 @@ export interface Api {
   // F3
   getGuardrails(): Promise<Guardrails>;
   getBudget(): Promise<BudgetUsage>;
-  dryRun(sql: string, params: RuleInput['parameters'], ruleId?: string): Promise<DryRunResult>;
-  execute(sql: string, params: RuleInput['parameters'], ruleId?: string): Promise<ExecutionResult>;
+  dryRun(sql: string, ruleId?: string): Promise<DryRunResult>;
+  execute(sql: string, ruleId?: string): Promise<ExecutionResult>;
 
   // F4
   submitRule(ruleId: string): Promise<RuleDetail>;
@@ -102,8 +102,8 @@ export function createHttpApi(): Api {
       (await http<{ available: boolean }>('GET', `/rules/name-available${qs({ name, exclude: excludeRuleId })}`)).available,
     getGuardrails: () => http('GET', '/config/guardrails'),
     getBudget: () => http('GET', '/me/budget'),
-    dryRun: (sql, parameters, ruleId) => http('POST', '/query/dry-run', { sql, parameters, ruleId }),
-    execute: (sql, parameters, ruleId) => http('POST', '/query/execute', { sql, parameters, ruleId }),
+    dryRun: (sql, ruleId) => http('POST', '/query/dry-run', { sql, ruleId }),
+    execute: (sql, ruleId) => http('POST', '/query/execute', { sql, ruleId }),
     submitRule: (id) => http('POST', `/rules/${id}/submit`),
     getPerformance: (id, from, to) => http('GET', `/rules/${id}/performance${qs({ from, to })}`),
     getConsolidated: () => http('GET', '/performance/production'),

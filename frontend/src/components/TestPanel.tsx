@@ -1,14 +1,13 @@
 import { useState } from 'react';
 import { api } from '../api/client';
-import type { DryRunResult, ExecutionResult, RuleParameter, SqlIssue } from '../api/types';
+import type { DryRunResult, ExecutionResult, SqlIssue } from '../api/types';
 import { useAsync } from '../lib/useAsync';
-import { fmtBytes, fmtDuration, fmtEur, fmtInt } from '../lib/format';
+import { addDays, fmtBytes, fmtDuration, fmtEur, fmtInt, fmtLongDate, isoDate } from '../lib/format';
 import { queryHash } from '../lib/sql';
 import { Alert, Spinner } from './ui';
 
 interface Props {
   sql: string;
-  params: RuleParameter[];
   ruleId?: string;
   onIssues: (issues: SqlIssue[]) => void;
   onGoTo: (line: number, column?: number) => void;
@@ -20,7 +19,7 @@ interface Props {
 
 type Phase = 'idle' | 'dry-running' | 'dry-done' | 'executing' | 'exec-done';
 
-export function TestPanel({ sql, params, ruleId, onIssues, onGoTo, onTested, onExecuted }: Props) {
+export function TestPanel({ sql, ruleId, onIssues, onGoTo, onTested, onExecuted }: Props) {
   const guard = useAsync(() => api.getGuardrails(), []);
   const budget = useAsync(() => api.getBudget(), []);
   const [phase, setPhase] = useState<Phase>('idle');
@@ -30,7 +29,7 @@ export function TestPanel({ sql, params, ruleId, onIssues, onGoTo, onTested, onE
   const [error, setError] = useState<string>();
   const [testedHash, setTestedHash] = useState<string>();
 
-  const hash = queryHash(sql, params);
+  const hash = queryHash(sql);
   const stale = testedHash !== undefined && testedHash !== hash;
 
   async function runDry() {
@@ -39,7 +38,7 @@ export function TestPanel({ sql, params, ruleId, onIssues, onGoTo, onTested, onE
     setExec(undefined);
     setError(undefined);
     try {
-      const r = await api.dryRun(sql, params, ruleId);
+      const r = await api.dryRun(sql, ruleId);
       setDry(r);
       setTestedHash(hash);
       onIssues(r.issues);
@@ -56,7 +55,7 @@ export function TestPanel({ sql, params, ruleId, onIssues, onGoTo, onTested, onE
     setPhase('executing');
     setError(undefined);
     try {
-      setExec(await api.execute(sql, params, ruleId));
+      setExec(await api.execute(sql, ruleId));
       setPhase('exec-done');
       onExecuted?.(hash);
       budget.reload();
@@ -104,6 +103,12 @@ export function TestPanel({ sql, params, ruleId, onIssues, onGoTo, onTested, onE
           </div>
         )}
       </div>
+
+      <p className="small" style={{ margin: 0 }}>
+        Le test s'exécute avec <span className="mono">@run_date</span> = <strong>{fmtLongDate(dry?.runDate ?? addDays(isoDate(new Date()), -1))}</strong>{' '}
+        (la veille), comme le ferait Airflow pour le run de ce jour. La période réellement couverte dépend de la façon dont la requête
+        utilise cette date.
+      </p>
 
       {g && (
         <p className="small muted" style={{ margin: 0 }}>

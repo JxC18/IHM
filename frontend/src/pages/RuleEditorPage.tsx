@@ -3,7 +3,6 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { CRITICALITIES, SCHEDULES, type RuleDetail, type RuleInput, type SqlIssue } from '../api/types';
 import { SqlEditor, type SqlEditorHandle } from '../components/SqlEditor';
-import { ParamsEditor } from '../components/ParamsEditor';
 import { TestPanel } from '../components/TestPanel';
 import { Alert, Spinner, StatusBadge } from '../components/ui';
 import { CRITICALITY_LABEL, FRAUD_TYPOLOGIES, SCHEDULE_LABEL, STATUS_LABEL, fmtDateTime } from '../lib/format';
@@ -21,7 +20,6 @@ const EMPTY: RuleInput = {
 FROM \`sales.orders\` o
 WHERE o.order_date = @run_date
 `,
-  parameters: [],
 };
 
 const toInput = (r: RuleDetail): RuleInput => ({
@@ -31,7 +29,6 @@ const toInput = (r: RuleDetail): RuleInput => ({
   criticality: r.criticality,
   schedule: r.schedule,
   sqlQuery: r.sqlQuery,
-  parameters: r.parameters.map((p) => ({ ...p })),
 });
 
 const same = (a: RuleInput, b: RuleInput) => JSON.stringify(a) === JSON.stringify(b);
@@ -109,8 +106,8 @@ export function RuleEditorPage() {
     return () => clearTimeout(t);
   }, [form.name, ruleId]);
 
-  const paramIssues = useMemo(() => checkParams(form.sqlQuery, form.parameters), [form.sqlQuery, form.parameters]);
-  const hash = queryHash(form.sqlQuery, form.parameters);
+  const paramIssues = useMemo(() => checkParams(form.sqlQuery), [form.sqlQuery]);
+  const hash = queryHash(form.sqlQuery);
   const editorIssues = dryIssues ?? paramIssues;
 
   const set = <K extends keyof RuleInput>(k: K, v: RuleInput[K]) => setForm((f) => ({ ...f, [k]: v }));
@@ -304,8 +301,9 @@ export function RuleEditorPage() {
             <div>
               <h2 id="sec-sql">Requête SQL</h2>
               <p>
-                Une seule instruction <span className="mono">SELECT</span>, exposant <span className="mono">order_id</span>, fenêtrée par{' '}
-                <span className="mono">@run_date</span>. Paramètres nommés BigQuery : <span className="mono">@nom</span>.
+                Une seule instruction <span className="mono">SELECT</span>, exposant <span className="mono">order_id</span>. Les seuils s'écrivent
+                directement dans la requête (ex. <span className="mono">amount_eur &gt;= 500</span>) ; seule la date du run est un paramètre,{' '}
+                <span className="mono">@run_date</span>, fourni par Airflow à chaque exécution.
               </p>
             </div>
           </div>
@@ -329,10 +327,6 @@ export function RuleEditorPage() {
                 ))}
               </ul>
             )}
-            <div className="stack" style={{ gap: 6 }}>
-              <h3>Paramètres</h3>
-              <ParamsEditor sql={form.sqlQuery} value={form.parameters} onChange={(p) => set('parameters', p)} />
-            </div>
           </div>
         </section>
 
@@ -346,7 +340,6 @@ export function RuleEditorPage() {
           <div className="card-pad">
             <TestPanel
               sql={form.sqlQuery}
-              params={form.parameters}
               ruleId={rule?.ruleId}
               onIssues={setDryIssues}
               onGoTo={(l, c) => editor.current?.goTo(l, c)}

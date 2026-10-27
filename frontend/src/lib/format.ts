@@ -49,12 +49,14 @@ const pf = new Intl.NumberFormat('fr-FR', { style: 'percent', maximumFractionDig
 const ef = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 2 });
 const dtf = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
 const df = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium' });
+const ldf = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
 export const fmtInt = (n: number) => nf.format(n);
 export const fmtPct = (n: number | null) => (n === null || !isFinite(n) ? '—' : pf.format(n));
 export const fmtEur = (n: number) => (n < 0.01 && n > 0 ? '< 0,01 €' : ef.format(n));
 export const fmtDateTime = (iso: string) => dtf.format(new Date(iso));
 export const fmtDate = (iso: string) => df.format(new Date(iso.length === 10 ? iso + 'T00:00:00' : iso));
+export const fmtLongDate = (iso: string) => ldf.format(new Date(iso.length === 10 ? iso + 'T00:00:00' : iso));
 
 export function fmtBytes(b: number): string {
   // Unités décimales, comme la facturation BigQuery.

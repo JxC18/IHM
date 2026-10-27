@@ -21,7 +21,6 @@ from app.schemas import (
     NameAvailable,
     RuleDetail,
     RuleInput,
-    RuleParameter,
     RuleStatus,
     RuleSummary,
     RuleVersionOut,
@@ -68,7 +67,6 @@ def _version_out(v: RuleVersion, rule: Rule, users: dict[str, User]) -> RuleVers
         criticality=v.criticality,  # type: ignore[arg-type]
         schedule=v.schedule,  # type: ignore[arg-type]
         sql_query=v.sql_query,
-        parameters=[RuleParameter.model_validate(p) for p in v.parameters],
         status=v.status,  # type: ignore[arg-type]
         rejection_reason=v.rejection_reason,
         owner_matricule=rule.owner_matricule,
@@ -140,7 +138,7 @@ def _validate(db: Session, bq: BigQueryGateway, data: RuleInput, exclude_rule_id
     # DML/DDL rejetés dès l'enregistrement, d'après le dry-run quand il aboutit (PRD F2).
     # Les autres contraintes (order_id, @run_date…) bloquent la soumission, pas le brouillon.
     try:
-        stype = bq.dry_run(data.sql_query, data.parameters, date.today()).statement_type
+        stype = bq.dry_run(data.sql_query, date.today()).statement_type
     except QueryError:
         kw = _first_keyword(data.sql_query)
         stype = "SELECT" if kw in ("SELECT", "WITH") else kw
@@ -157,14 +155,13 @@ def _apply(v: RuleVersion, data: RuleInput) -> None:
     v.criticality = data.criticality
     v.schedule = data.schedule
     v.sql_query = data.sql_query
-    v.parameters = [p.model_dump() for p in data.parameters]
 
 
 def _adopt_tests(
     db: Session, user: User, v: RuleVersion, from_rule: str | None, from_version: int | None
 ) -> None:
     """Rattache à `v` les tests récents de l'utilisateur portant exactement sur son contenu."""
-    h = query_hash(v.sql_query, [RuleParameter.model_validate(p) for p in v.parameters])
+    h = query_hash(v.sql_query)
     since = now() - TEST_ADOPTION_WINDOW
     for t in db.scalars(
         select(TestRun).where(
@@ -319,7 +316,7 @@ def submit_rule(
     if cur.status != "DRAFT":
         raise ApiError(409, "Seule une version en brouillon peut être soumise.")
     last = _last_test(db, rule_id, cur.version)
-    h = query_hash(cur.sql_query, [RuleParameter.model_validate(p) for p in cur.parameters])
+    h = query_hash(cur.sql_query)
     if not last or not last.success or last.phase != "EXECUTION" or last.query_hash != h:
         raise ApiError(
             409,

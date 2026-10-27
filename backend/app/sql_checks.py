@@ -2,18 +2,17 @@
 
 Les contraintes structurelles (SELECT unique, colonne order_id) s'appuient sur
 les métadonnées du dry-run BigQuery, pas sur le texte : voir `query.py`. Ici,
-uniquement ce que BigQuery ne dit pas : cohérence des paramètres, @run_date,
+uniquement ce que BigQuery ne dit pas : seul @run_date est un paramètre, et il est obligatoire ;
 dates en dur.
 """
 
 import re
 
-from app.schemas import RuleParameter, SqlIssue
+from app.schemas import SqlIssue
 
 RUN_DATE_PARAM = "run_date"
 
 _PARAM_RE = re.compile(r"(^|[^@\w])@([A-Za-z_]\w*)")
-_NAME_RE = re.compile(r"^[A-Za-z_]\w*$")
 _DATE_RE = re.compile(r"(?:\b(?:DATE|TIMESTAMP)\s*)?'\d{4}-\d{2}-\d{2}[^']*'", re.IGNORECASE)
 
 
@@ -64,68 +63,34 @@ def find_params(sql: str) -> list[tuple[str, int]]:
     return [(m.group(2), m.start() + len(m.group(1))) for m in _PARAM_RE.finditer(mask_sql(sql))]
 
 
-def check_params(sql: str, declared: list[RuleParameter]) -> list[SqlIssue]:
+def check_params(sql: str) -> list[SqlIssue]:
+    """`@run_date`, fourni par Airflow, est le seul paramètre : les seuils s'écrivent en dur dans le SQL."""
     issues: list[SqlIssue] = []
     used = find_params(sql)
-    used_names = {n for n, _ in used}
-    declared_names = {p.name for p in declared}
     reported: set[str] = set()
-
     for name, off in used:
-        if name == RUN_DATE_PARAM or name in declared_names or name in reported:
+        if name == RUN_DATE_PARAM or name in reported:
             continue
         reported.add(name)
         line, col = offset_to_line_col(sql, off)
         issues.append(
             SqlIssue(
                 severity="error",
-                code="PARAM_UNDECLARED",
-                message=f"Le paramètre @{name} est utilisé mais n'est pas déclaré.",
+                code="PARAM_NOT_ALLOWED",
+                message=f"@{name} : seul @{RUN_DATE_PARAM} est disponible. "
+                "Écrivez la valeur directement dans la requête (ex. > 500).",
                 line=line,
                 column=col,
                 length=len(name) + 1,
             )
         )
-    for p in declared:
-        if not p.name:
-            continue
-        if p.name == RUN_DATE_PARAM:
-            issues.append(
-                SqlIssue(
-                    severity="error",
-                    code="PARAM_RESERVED",
-                    message=f"@{RUN_DATE_PARAM} est réservé et fourni par Airflow : ne le déclarez pas.",
-                )
-            )
-        elif p.name not in used_names:
-            issues.append(
-                SqlIssue(
-                    severity="warning",
-                    code="PARAM_UNUSED",
-                    message=f"Le paramètre @{p.name} est déclaré mais absent de la requête.",
-                )
-            )
-        if not _NAME_RE.match(p.name):
-            issues.append(
-                SqlIssue(
-                    severity="error", code="PARAM_NAME", message=f"Nom de paramètre invalide : « {p.name} »."
-                )
-            )
-    names = [p.name for p in declared if p.name]
-    for dup in sorted({n for n in names if names.count(n) > 1}):
-        issues.append(
-            SqlIssue(
-                severity="error",
-                code="PARAM_DUPLICATE",
-                message=f"Le paramètre @{dup} est déclaré plusieurs fois.",
-            )
-        )
-    if RUN_DATE_PARAM not in used_names:
+    if not any(n == RUN_DATE_PARAM for n, _ in used):
         issues.append(
             SqlIssue(
                 severity="error",
                 code="RUN_DATE_MISSING",
-                message=f"La requête doit utiliser @{RUN_DATE_PARAM} pour sa fenêtre d'exécution.",
+                message=f"La requête doit utiliser @{RUN_DATE_PARAM} pour délimiter les données traitées "
+                f"(ex. WHERE order_date = @{RUN_DATE_PARAM}).",
             )
         )
     return issues
@@ -149,9 +114,9 @@ def check_hardcoded_dates(sql: str) -> list[SqlIssue]:
     return issues
 
 
-def query_hash(sql: str, params: list[RuleParameter]) -> str:
-    """Empreinte requête + paramètres, identique à `queryHash` du front (FNV-1a 32 bits sur UTF-16)."""
-    s = re.sub(r"\s+", " ", sql.strip()) + "|" + ",".join(f"{p.name}:{p.type}:{p.default}" for p in params)
+def query_hash(sql: str) -> str:
+    """Empreinte de la requête, identique à `queryHash` du front (FNV-1a 32 bits sur UTF-16)."""
+    s = re.sub(r"\s+", " ", sql.strip())
     h = 0x811C9DC5
     data = s.encode("utf-16-le")
     for i in range(0, len(data), 2):

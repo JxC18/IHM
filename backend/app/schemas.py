@@ -9,7 +9,6 @@ from pydantic.alias_generators import to_camel
 RuleStatus = Literal["DRAFT", "SUBMITTED", "VALIDATED", "IN_PRODUCTION", "DISABLED", "REJECTED"]
 Criticality = Literal["HIGH", "MEDIUM", "LOW"]
 Schedule = Literal["DAILY", "HOURLY", "WEEKLY"]
-ParamType = Literal["STRING", "INT64", "FLOAT64", "DATE", "TIMESTAMP", "BOOL"]
 
 
 class Model(BaseModel):
@@ -36,13 +35,6 @@ class ProfileIn(Model):
     last_name: str = Field(min_length=1, max_length=100)
 
 
-class RuleParameter(Model):
-    name: str
-    type: ParamType
-    default: str = ""
-    description: str = ""
-
-
 class RuleInput(Model):
     name: str = Field(max_length=200)
     description: str
@@ -50,7 +42,6 @@ class RuleInput(Model):
     criticality: Criticality
     schedule: Schedule
     sql_query: str
-    parameters: list[RuleParameter] = []
 
 
 class TestRecord(Model):
@@ -114,7 +105,6 @@ class BudgetUsage(Model):
 
 class QueryIn(Model):
     sql: str
-    parameters: list[RuleParameter] = []
     rule_id: str | None = None
 
 
@@ -140,6 +130,7 @@ class DryRunResult(Model):
     estimated_cost_eur: float | None = None
     issues: list[SqlIssue]
     exceeds_bytes_limit: bool
+    run_date: date  # valeur de @run_date utilisée pour le test
     test_id: str
 
 
@@ -151,6 +142,7 @@ class ExecutionResult(Model):
     total_rows: int
     duration_ms: int
     bytes_processed: int
+    run_date: date
     test_id: str
 
 

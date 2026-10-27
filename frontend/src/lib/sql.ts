@@ -1,4 +1,4 @@
-import type { RuleParameter, SqlIssue } from '../api/types';
+import type { SqlIssue } from '../api/types';
 
 /** Paramètre réservé, fourni par Airflow à chaque exécution (PRD F2, contrainte 3). */
 export const RUN_DATE_PARAM = 'run_date';
@@ -73,70 +73,40 @@ export function findParams(sql: string): ParamOccurrence[] {
 }
 
 /**
- * Cohérence entre les `@param` du SQL et les paramètres déclarés (PRD F2).
+ * Paramètres de la requête (PRD F2, simplifié) : `@run_date`, fourni par Airflow,
+ * est le seul paramètre. Les seuils s'écrivent directement dans le SQL.
  * Contrôle d'ergonomie côté front ; le back refait la vérification.
  */
-export function checkParams(sql: string, declared: RuleParameter[]): SqlIssue[] {
+export function checkParams(sql: string): SqlIssue[] {
   const issues: SqlIssue[] = [];
   const used = findParams(sql);
-  const usedNames = new Set(used.map((p) => p.name));
-  const declaredNames = new Set(declared.map((p) => p.name));
   const reported = new Set<string>();
-
   for (const p of used) {
-    if (p.name === RUN_DATE_PARAM || declaredNames.has(p.name) || reported.has(p.name)) continue;
+    if (p.name === RUN_DATE_PARAM || reported.has(p.name)) continue;
     reported.add(p.name);
     const { line, column } = offsetToLineCol(sql, p.offset);
     issues.push({
       severity: 'error',
-      code: 'PARAM_UNDECLARED',
-      message: `Le paramètre @${p.name} est utilisé mais n'est pas déclaré.`,
+      code: 'PARAM_NOT_ALLOWED',
+      message: `@${p.name} : seul @${RUN_DATE_PARAM} est disponible. Écrivez la valeur directement dans la requête (ex. > 500).`,
       line,
       column,
       length: p.name.length + 1,
     });
   }
-  for (const p of declared) {
-    if (!p.name) continue;
-    if (p.name === RUN_DATE_PARAM) {
-      issues.push({
-        severity: 'error',
-        code: 'PARAM_RESERVED',
-        message: `@${RUN_DATE_PARAM} est réservé et fourni par Airflow : ne le déclarez pas.`,
-      });
-    } else if (!usedNames.has(p.name)) {
-      issues.push({
-        severity: 'warning',
-        code: 'PARAM_UNUSED',
-        message: `Le paramètre @${p.name} est déclaré mais absent de la requête.`,
-      });
-    }
-  }
-  const dup = declared.map((p) => p.name).filter((n, i, a) => n && a.indexOf(n) !== i);
-  for (const n of new Set(dup)) {
-    issues.push({ severity: 'error', code: 'PARAM_DUPLICATE', message: `Le paramètre @${n} est déclaré plusieurs fois.` });
-  }
-  for (const p of declared) {
-    if (p.name && !/^[A-Za-z_]\w*$/.test(p.name)) {
-      issues.push({ severity: 'error', code: 'PARAM_NAME', message: `Nom de paramètre invalide : « ${p.name} ».` });
-    }
-  }
-  if (!usedNames.has(RUN_DATE_PARAM)) {
+  if (!used.some((p) => p.name === RUN_DATE_PARAM)) {
     issues.push({
       severity: 'error',
       code: 'RUN_DATE_MISSING',
-      message: `La requête doit utiliser @${RUN_DATE_PARAM} pour sa fenêtre d'exécution.`,
+      message: `La requête doit utiliser @${RUN_DATE_PARAM} pour délimiter les données traitées (ex. WHERE order_date = @${RUN_DATE_PARAM}).`,
     });
   }
   return issues;
 }
 
-/** Empreinte stable de la requête + paramètres, pour lier un test à une version. */
-export function queryHash(sql: string, params: RuleParameter[]): string {
-  const s =
-    sql.trim().replace(/\s+/g, ' ') +
-    '|' +
-    params.map((p) => `${p.name}:${p.type}:${p.default}`).join(',');
+/** Empreinte stable de la requête, pour lier un test à une version. */
+export function queryHash(sql: string): string {
+  const s = sql.trim().replace(/\s+/g, ' ');
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);

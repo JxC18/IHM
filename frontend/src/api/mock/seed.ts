@@ -21,7 +21,7 @@ export interface MockDb {
   usage: Record<string, Record<string, number>>;
 }
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 const daysAgo = (n: number, h = 10) => {
   const d = new Date();
@@ -49,7 +49,6 @@ interface Def {
   criticality: RuleVersion['criticality'];
   schedule: RuleVersion['schedule'];
   sql: string;
-  parameters: RuleVersion['parameters'];
 }
 
 function v(def: Def, version: number, status: RuleVersion['status'], created: number, extra: Partial<RuleVersion> = {}): RuleVersion {
@@ -62,7 +61,6 @@ function v(def: Def, version: number, status: RuleVersion['status'], created: nu
     criticality: def.criticality,
     schedule: def.schedule,
     sqlQuery: def.sql,
-    parameters: def.parameters,
     status,
     ownerMatricule: def.owner,
     ownerName: name(def.owner),
@@ -88,15 +86,10 @@ const R1: Def = {
 FROM \`sales.orders\` o
 JOIN \`sales.customers\` c USING (customer_id)
 WHERE o.order_date = @run_date
-  AND o.amount_eur >= @min_amount
-  AND TIMESTAMP_DIFF(o.created_at, c.account_created_at, HOUR) < @max_account_age_h`,
-  parameters: [
-    { name: 'min_amount', type: 'FLOAT64', default: '500', description: 'Montant minimum de la commande (€)' },
-    { name: 'max_account_age_h', type: 'INT64', default: '24', description: 'Ancienneté maximale du compte (heures)' },
-  ],
+  AND o.amount_eur >= 500
+  AND TIMESTAMP_DIFF(o.created_at, c.account_created_at, HOUR) < 24`,
 };
-const R1_V1_SQL = R1.sql.replace('@min_amount', '300');
-const R1_V1_PARAMS = R1.parameters.filter((p) => p.name !== 'min_amount');
+const R1_V1_SQL = R1.sql.replace('>= 500', '>= 300');
 
 const R2: Def = {
   id: '7f3c2a10-5b1e-4c8a-9d21-0a1b2c3d4e02',
@@ -117,8 +110,7 @@ JOIN \`sales.deliveries\` d USING (order_id)
 JOIN \`sales.addresses\` a ON a.address_id = o.billing_address_id
 WHERE o.order_date = @run_date
   AND d.country != a.country
-  AND o.amount_eur >= @min_amount`,
-  parameters: [{ name: 'min_amount', type: 'FLOAT64', default: '150', description: 'Montant minimum (€)' }],
+  AND o.amount_eur >= 150`,
 };
 
 const R3: Def = {
@@ -136,11 +128,9 @@ const R3: Def = {
 FROM \`sales.payments\` p
 JOIN \`sales.orders\` o USING (order_id)
 WHERE o.order_date = @run_date
-  AND p.attempt_count >= @min_attempts`,
-  parameters: [{ name: 'min_attempts', type: 'INT64', default: '3', description: 'Nombre minimum de tentatives' }],
+  AND p.attempt_count >= 3`,
 };
-const R3_V2_SQL = R3.sql + `\n  AND p.status = 'ACCEPTED'`;
-const R3_V2_PARAMS = [{ ...R3.parameters[0], default: '5' }];
+const R3_V2_SQL = R3.sql.replace('>= 3', '>= 5') + `\n  AND p.status = 'ACCEPTED'`;
 
 const R4: Def = {
   id: '7f3c2a10-5b1e-4c8a-9d21-0a1b2c3d4e04',
@@ -157,8 +147,7 @@ const R4: Def = {
 FROM \`sales.orders\` o
 JOIN \`sales.customers\` c USING (customer_id)
 WHERE o.order_date = @run_date
-  AND TIMESTAMP_DIFF(o.created_at, c.email_changed_at, MINUTE) BETWEEN 0 AND @max_delay_min`,
-  parameters: [{ name: 'max_delay_min', type: 'INT64', default: '120', description: 'Délai maximal après changement (minutes)' }],
+  AND TIMESTAMP_DIFF(o.created_at, c.email_changed_at, MINUTE) BETWEEN 0 AND 120`,
 };
 
 const R5: Def = {
@@ -182,8 +171,7 @@ SELECT
   u.nb_comptes
 FROM \`sales.orders\` o
 JOIN usages u USING (promo_code, shipping_address_id)
-WHERE u.nb_comptes >= @min_accounts`,
-  parameters: [{ name: 'min_accounts', type: 'INT64', default: '3', description: 'Nombre minimum de comptes distincts' }],
+WHERE u.nb_comptes >= 3`,
 };
 
 const R6: Def = {
@@ -202,13 +190,9 @@ FROM \`sales.orders\` o
 JOIN \`sales.payments\` p USING (order_id)
 JOIN \`sales.deliveries\` d USING (order_id)
 WHERE o.order_date = @run_date
-  AND p.card_country != @home_country
+  AND p.card_country != 'FR'
   AND d.delivery_mode = 'RELAY'
-  AND o.amount_eur >= @min_amount`,
-  parameters: [
-    { name: 'home_country', type: 'STRING', default: 'FR', description: 'Pays domestique (code ISO)' },
-    { name: 'min_amount', type: 'FLOAT64', default: '400', description: 'Montant minimum (€)' },
-  ],
+  AND o.amount_eur >= 400`,
 };
 
 const R7: Def = {
@@ -224,8 +208,7 @@ const R7: Def = {
   COUNT(DISTINCT o.customer_id) OVER (PARTITION BY o.shipping_address_id) AS nb_comptes
 FROM \`sales.orders\` o
 WHERE o.order_date BETWEEN DATE_SUB(@run_date, INTERVAL 30 DAY) AND @run_date
-QUALIFY nb_comptes > @max_accounts`,
-  parameters: [{ name: 'max_accounts', type: 'INT64', default: '4', description: 'Seuil de comptes distincts' }],
+QUALIFY nb_comptes > 4`,
 };
 
 const R8: Def = {
@@ -241,8 +224,7 @@ const R8: Def = {
   o.item_count
 FROM \`sales.orders\` o
 WHERE o.order_date = @run_date
-  AND o.item_count >= @min_items`,
-  parameters: [{ name: 'min_items', type: 'INT64', default: '4', description: "Nombre minimum d'articles" }],
+  AND o.item_count >= 4`,
 };
 
 function passedTest(r: RuleVersion, at: number, by: string, i: number): TestRecord {
@@ -250,7 +232,7 @@ function passedTest(r: RuleVersion, at: number, by: string, i: number): TestReco
     id: `seed-test-${r.ruleId.slice(-2)}-${r.version}-${i}`,
     ruleId: r.ruleId,
     version: r.version,
-    queryHash: queryHash(r.sqlQuery, r.parameters),
+    queryHash: queryHash(r.sqlQuery),
     at: daysAgo(at, 15),
     byMatricule: by,
     byName: name(by),
@@ -264,11 +246,11 @@ function passedTest(r: RuleVersion, at: number, by: string, i: number): TestReco
 }
 
 export function buildSeed(): MockDb {
-  const r1v1 = v({ ...R1, sql: R1_V1_SQL, parameters: R1_V1_PARAMS }, 1, 'DISABLED', 160, { airflowDagId: 'fraud_rule_compte_recent_v1' });
+  const r1v1 = v({ ...R1, sql: R1_V1_SQL }, 1, 'DISABLED', 160, { airflowDagId: 'fraud_rule_compte_recent_v1' });
   const r1v2 = v(R1, 2, 'IN_PRODUCTION', 75, { submittedAt: daysAgo(74), airflowDagId: 'fraud_rule_compte_recent_v2' });
   const r2v1 = v(R2, 1, 'IN_PRODUCTION', 120, { submittedAt: daysAgo(119), airflowDagId: 'fraud_rule_livraison_pays' });
   const r3v1 = v(R3, 1, 'IN_PRODUCTION', 95, { submittedAt: daysAgo(94), airflowDagId: 'fraud_rule_tentatives_paiement' });
-  const r3v2 = v({ ...R3, sql: R3_V2_SQL, parameters: R3_V2_PARAMS }, 2, 'DRAFT', 3);
+  const r3v2 = v({ ...R3, sql: R3_V2_SQL }, 2, 'DRAFT', 3);
   const r4v1 = v(R4, 1, 'IN_PRODUCTION', 140, { submittedAt: daysAgo(139), airflowDagId: 'fraud_rule_changement_email' });
   const r5v1 = v(R5, 1, 'SUBMITTED', 6, { submittedAt: daysAgo(5) });
   const r6v1 = v(R6, 1, 'VALIDATED', 12, { submittedAt: daysAgo(11) });
