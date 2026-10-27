@@ -211,6 +211,15 @@ navigateur ──► front (Nginx, Cloud Run) ──/api──► API FastAPI (C
     le statut redevient « En production » dès que les runs reprennent ;
   - *Remplacée* : une version plus récente a été soumise ou tourne à sa place.
 
+  Une version **soumise mais jamais exécutée** reste modifiable : elle repasse en brouillon (même numéro), l'équipe
+  data est prévenue (`RULE_SUBMISSION_WITHDRAWN`), puis elle doit être retestée et resoumise. Dès qu'une version
+  a tourné, elle est figée et toute modification crée une nouvelle version.
+
+  **Contrat côté Airflow, à valider avec l'équipe data** : le DAG ne recopie pas la requête, il lit `sql_query`
+  dans `rules_registry` à chaque run, en identifiant la règle par son `rule_id` (le nom est modifiable) et en
+  exécutant la **version mise en production par l'équipe data**, pas « la dernière version » (sinon une v2
+  fraîchement soumise partirait en production sans elle).
+
   Les statuts « Validée » et « Refusée » disparaissent : un refus passe hors plateforme et l'analyste soumet
   une nouvelle version (risque R3 : le motif n'est pas tracé). L'état des runs est recopié par
   `POST /internal/sync-runs`, à appeler périodiquement (Cloud Scheduler, toutes les heures par exemple).

@@ -380,9 +380,15 @@ export function createMockApi(): Api {
       validateInput(input, id);
       const cur = current(r);
       const t = now();
-      if (cur.status === 'DRAFT') {
+      // Brouillon, ou version soumise jamais exécutée par Airflow : modification sur place.
+      const withdrawn = cur.status === 'SUBMITTED' && r.productionSince[cur.version] === undefined;
+      if (cur.status === 'DRAFT' || withdrawn) {
         Object.assign(cur, clone(input), { name: input.name.trim(), updatedAt: t });
-        audit(u, 'RULE_UPDATE', cur);
+        if (withdrawn) {
+          cur.status = 'DRAFT';
+          delete cur.submittedAt;
+        }
+        audit(u, 'RULE_UPDATE', cur, withdrawn ? "Soumission retirée pour modification (équipe data prévenue)" : undefined);
       } else {
         const v: RuleVersion = {
           ...clone(input),

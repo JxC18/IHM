@@ -97,7 +97,7 @@ export function RuleDetailPage() {
             ▶ Tester
           </button>
           <Link to={`/rules/${r.ruleId}/edit`} className="btn">
-            {r.status === 'DRAFT' ? 'Modifier' : 'Créer une nouvelle version'}
+            {r.status === 'DRAFT' || r.status === 'SUBMITTED' ? 'Modifier' : 'Créer une nouvelle version'}
           </Link>
           {r.status === 'DRAFT' && (
             <button
@@ -118,7 +118,8 @@ export function RuleDetailPage() {
         {flash === 'saved' && <Alert kind="success" title="Règle enregistrée." />}
         {flash === 'submitted' && (
           <Alert kind="success" title="Règle soumise à l'équipe data.">
-            Elle est visible dans <span className="mono">rules_registry</span> et n'est plus modifiable : toute modification créera une nouvelle version.
+            Elle est visible dans <span className="mono">rules_registry</span>. Vous pouvez encore la modifier tant qu'Airflow ne l'a pas
+            exécutée : elle repassera alors en brouillon.
           </Alert>
         )}
         {actionError && <Alert kind="error" title={actionError} />}

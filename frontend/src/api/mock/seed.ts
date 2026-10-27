@@ -24,7 +24,7 @@ export interface MockDb {
   usage: Record<string, Record<string, number>>;
 }
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 const daysAgo = (n: number, h = 10) => {
   const d = new Date();
@@ -214,9 +214,6 @@ WHERE o.order_date BETWEEN DATE_SUB(@run_date, INTERVAL 30 DAY) AND @run_date
 QUALIFY nb_comptes > 4`,
 };
 
-// v2 réécrite sur une fenêtre de 7 jours après un retour de l'équipe data (hors plateforme).
-const R7_V2_SQL = R7.sql.replace('INTERVAL 30 DAY', 'INTERVAL 7 DAY');
-
 const R8: Def = {
   id: '7f3c2a10-5b1e-4c8a-9d21-0a1b2c3d4e08',
   owner: '118870',
@@ -262,7 +259,6 @@ export function buildSeed(): MockDb {
   const r5v1 = v(R5, 1, 'SUBMITTED', 6, { submittedAt: daysAgo(5) });
   const r6v1 = v(R6, 1, 'SUBMITTED', 12, { submittedAt: daysAgo(11) });
   const r7v1 = v(R7, 1, 'SUBMITTED', 20, { submittedAt: daysAgo(19) });
-  const r7v2 = v({ ...R7, sql: R7_V2_SQL }, 2, 'SUBMITTED', 3, { submittedAt: daysAgo(2) });
   const r8v1 = v(R8, 1, 'DRAFT', 1);
 
   const rules: MockRule[] = [
@@ -297,7 +293,7 @@ export function buildSeed(): MockDb {
     },
     { ruleId: R5.id, versions: [r5v1], productionSince: {}, productionUntil: {} },
     { ruleId: R6.id, versions: [r6v1], productionSince: {}, productionUntil: {} },
-    { ruleId: R7.id, versions: [r7v1, r7v2], productionSince: {}, productionUntil: {} },
+    { ruleId: R7.id, versions: [r7v1], productionSince: {}, productionUntil: {} },
     { ruleId: R8.id, versions: [r8v1], productionSince: {}, productionUntil: {} },
   ];
 
@@ -310,7 +306,6 @@ export function buildSeed(): MockDb {
     passedTest(r5v1, 6, '118870', 5),
     passedTest(r6v1, 12, '120415', 6),
     passedTest(r7v1, 20, '104233', 7),
-    passedTest(r7v2, 2, '104233', 8),
     {
       id: 'seed-test-08-1-fail',
       ruleId: R8.id,

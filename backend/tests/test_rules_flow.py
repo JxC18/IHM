@@ -39,10 +39,10 @@ def test_parcours_complet_creation_test_soumission(client, bq):
     assert r.json()["status"] == "SUBMITTED"
     assert bq.published[-1] == (rid, 1, "SUBMITTED")
 
-    # Une règle soumise n'est plus modifiable : nouvelle version en DRAFT.
-    r = client.put(f"/rules/{rid}", json={**RULE, "description": "v2"}).json()
-    assert r["version"] == 2 and r["status"] == "DRAFT"
-    assert [v["status"] for v in r["versions"]] == ["DRAFT", "SUBMITTED"]
+    # Soumise mais jamais exécutée par Airflow : modifiable sur place, elle repasse en brouillon.
+    r = client.put(f"/rules/{rid}", json={**RULE, "description": "v1 corrigée"}).json()
+    assert (r["version"], r["status"], r["versionCount"]) == (1, "DRAFT", 1)
+    assert bq.published[-1] == (rid, 1, "DRAFT")
 
     # Les lignes ne sont jamais persistées : seules les métadonnées apparaissent.
     tests = client.get(f"/rules/{rid}").json()["tests"]
@@ -50,7 +50,7 @@ def test_parcours_complet_creation_test_soumission(client, bq):
     assert all("rows" not in t for t in tests)
 
     actions = [e["action"] for e in client.get("/audit", params={"ruleId": rid}).json()]
-    assert {"RULE_CREATE", "RULE_TEST", "RULE_SUBMIT", "RULE_NEW_VERSION"} <= set(actions)
+    assert {"RULE_CREATE", "RULE_TEST", "RULE_SUBMIT", "RULE_UPDATE"} <= set(actions)
 
 
 def test_test_sur_ancienne_requete_ne_permet_pas_la_soumission(client):
@@ -169,11 +169,11 @@ def test_statuts_deduits_des_runs_airflow(client, bq):
     assert bq.published[-2:] == [(rid, 1, "REPLACED"), (rid, 2, "IN_PRODUCTION")]
 
 
-def test_version_soumise_remplacee_par_une_nouvelle_soumission(client):
+def test_version_qui_a_tourne_reste_figee(client, bq):
     login(client)
     rid = _submit(client)
-    sql2 = SQL + "\n  AND o.item_count > 1"
-    client.put(f"/rules/{rid}", json={**RULE, "sqlQuery": sql2})
-    client.post("/query/execute", json={"sql": sql2, "ruleId": rid})
-    client.post(f"/rules/{rid}/submit")
-    assert [v["status"] for v in client.get(f"/rules/{rid}").json()["versions"]] == ["SUBMITTED", "REPLACED"]
+    now = datetime.now(UTC)
+    bq.stats = [RunStats(rid, 1, now, now, "fraud_rule_v1")]
+    client.post("/internal/sync-runs")
+    r = client.put(f"/rules/{rid}", json={**RULE, "description": "seuil revu"}).json()
+    assert (r["version"], r["status"], r["productionVersion"]) == (2, "DRAFT", 1)

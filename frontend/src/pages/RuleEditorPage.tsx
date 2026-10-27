@@ -125,7 +125,9 @@ export function RuleEditorPage() {
     sqlQuery: !form.sqlQuery.trim(),
   };
   const formValid = !Object.values(missing).some(Boolean) && !nameTaken;
-  const createsVersion = rule && rule.status !== 'DRAFT';
+  // Seule une version qui a tourné dans Airflow est figée ; une version soumise jamais exécutée se modifie sur place.
+  const createsVersion = rule && rule.status !== 'DRAFT' && rule.status !== 'SUBMITTED';
+  const withdraws = rule?.status === 'SUBMITTED';
   usePageTitle(rule ? `${createsVersion ? 'Nouvelle version' : 'Modifier'} · ${rule.name}` : ruleId ? undefined : 'Nouvelle règle');
   const canSubmit = formValid && execHash === hash && !paramIssues.some((i) => i.severity === 'error');
 
@@ -212,6 +214,12 @@ export function RuleEditorPage() {
             </div>
           </Alert>
         )}
+        {withdraws && (
+          <Alert kind="info" title={`La v${rule.version} est soumise mais pas encore en production : vous pouvez la modifier.`}>
+            L'enregistrement la repasse en brouillon (toujours v{rule.version}) et l'équipe data est prévenue que la soumission est retirée.
+            Il faudra la retester puis la soumettre à nouveau.
+          </Alert>
+        )}
         {createsVersion && (
           <Alert kind="warn" title={`La version v${rule.version} est « ${STATUS_LABEL[rule.status]} » et n'est plus modifiable.`}>
             L'enregistrement créera la version <strong>v{rule.version + 1}</strong> en brouillon. La v{rule.version} reste inchangée
@@ -223,7 +231,7 @@ export function RuleEditorPage() {
         <section className="card" aria-labelledby="sec-def">
           <div className="card-head">
             <h2 id="sec-def">Définition</h2>
-            {rule && <StatusBadge status={createsVersion ? 'DRAFT' : rule.status} />}
+            {rule && <StatusBadge status={createsVersion || withdraws ? 'DRAFT' : rule.status} />}
           </div>
           <div className="card-pad form-grid">
             <div className="field span-2">

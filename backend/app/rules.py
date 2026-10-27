@@ -244,8 +244,10 @@ def sync_runs(db: Session, bq: BigQueryGateway) -> int:
     return len(touched)
 
 
-def notify_submission(v: RuleVersion, by: str) -> None:
-    payload = {"event": "RULE_SUBMITTED", "ruleId": v.rule_id, "version": v.version, "name": v.name, "by": by}
+def notify_data_team(event: str, v: RuleVersion, by: str) -> None:
+    """Prévient l'équipe data : RULE_SUBMITTED, ou RULE_SUBMISSION_WITHDRAWN quand l'analyste
+    reprend une version soumise pour la modifier."""
+    payload = {"event": event, "ruleId": v.rule_id, "version": v.version, "name": v.name, "by": by}
     url = get_settings().notify_webhook_url
     if not url:
         log.info("notification équipe data (pas de canal configuré) : %s", payload)
@@ -343,13 +345,20 @@ def update_rule(
     cur = rule.versions[-1]
     t = now()
     rule.name_key = name_key(data.name)
-    if cur.status == "DRAFT":
+    withdrawn = cur.status == "SUBMITTED" and cur.first_run_at is None
+    if cur.status == "DRAFT" or withdrawn:
+        # Brouillon, ou version soumise qu'Airflow n'a jamais exécutée : modification sur place.
+        # Une version soumise repasse en brouillon (même numéro) et devra être retestée et resoumise.
         _apply(cur, data)
         cur.updated_at = t
         target = cur
-        record_audit(db, user, "RULE_UPDATE", cur)
+        if withdrawn:
+            cur.status, cur.submitted_at = "DRAFT", None
+        record_audit(
+            db, user, "RULE_UPDATE", cur, "Soumission retirée pour modification" if withdrawn else None
+        )
     else:
-        # Une version non-DRAFT n'est plus modifiable : nouvelle version en DRAFT (PRD F5).
+        # Une version qui a tourné dans Airflow est figée : nouvelle version en brouillon.
         target = RuleVersion(
             rule_id=rule_id, version=cur.version + 1, status="DRAFT", created_at=t, updated_at=t
         )
@@ -366,6 +375,8 @@ def update_rule(
         )
     _commit_name(db, data.name)
     _publish(bq, rule, target)
+    if withdrawn:
+        notify_data_team("RULE_SUBMISSION_WITHDRAWN", target, user.matricule)
     return detail(db, rule)
 
 
@@ -394,5 +405,5 @@ def submit_rule(
     db.commit()
     # Les versions précédentes peuvent passer « Remplacée » : on les republie aussi.
     _publish(bq, rule, *rule.versions)
-    notify_submission(cur, user.matricule)
+    notify_data_team("RULE_SUBMITTED", cur, user.matricule)
     return detail(db, rule)
