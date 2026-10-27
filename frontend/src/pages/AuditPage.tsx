@@ -5,6 +5,7 @@ import type { AuditAction, AuditEvent } from '../api/types';
 import { Alert, Spinner } from '../components/ui';
 import { fmtDateTime } from '../lib/format';
 import { useAsync } from '../lib/useAsync';
+import { usePageTitle } from '../nav/history';
 
 export const ACTION_LABEL: Record<AuditAction, string> = {
   LOGIN: 'Connexion',
@@ -60,6 +61,7 @@ export function AuditTable({ events, showRule = true }: { events: AuditEvent[]; 
 }
 
 export function AuditPage() {
+  usePageTitle("Journal d'audit");
   const [matricule, setMatricule] = useState('');
   const [action, setAction] = useState<AuditAction | ''>('');
   const users = useAsync(() => api.listUsers(), []);

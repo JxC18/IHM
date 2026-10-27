@@ -3,6 +3,8 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { RuleDetail, RuleVersion } from '../api/types';
 import { SqlEditor } from '../components/SqlEditor';
+import { Breadcrumb } from '../components/Breadcrumb';
+import { usePageTitle } from '../nav/history';
 import { DiffView } from '../components/DiffView';
 import { PerformanceDashboard } from '../components/PerformanceDashboard';
 import { Alert, CriticalityBadge, idleFor, Lifecycle, Spinner, StatusBadge } from '../components/ui';
@@ -28,6 +30,8 @@ export function RuleDetailPage() {
     if (flash) nav(loc.pathname, { replace: true, state: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  usePageTitle(rule.data?.name);
 
   if (rule.error) return <Alert kind="error" title={rule.error.message} />;
   if (!rule.data) return <Spinner />;
@@ -62,11 +66,9 @@ export function RuleDetailPage() {
 
   return (
     <>
+      <Breadcrumb items={[{ label: 'Règles', to: '/rules' }, { label: r.name }]} />
       <div className="page-head">
         <div>
-          <div className="breadcrumb">
-            <Link to="/rules">Règles</Link> / {r.name}
-          </div>
           <div className="row" style={{ gap: 10 }}>
             <h1>{r.name}</h1>
             <span className="tag">v{r.version}</span>

@@ -7,10 +7,12 @@ import { CriticalityBadge, StatusBadge, Spinner, Alert } from '../components/ui'
 import { CRITICALITY_LABEL, FRAUD_TYPOLOGIES, SCHEDULE_LABEL, STATUS_LABEL, fmtDateTime } from '../lib/format';
 import { useAsync } from '../lib/useAsync';
 import { usePref } from '../prefs/prefs';
+import { usePageTitle } from '../nav/history';
 
 const DEFAULT_FILTERS: RuleFilters = { q: '', status: '', typology: '', owner: '', criticality: '', sort: 'updated_desc' };
 
 export function RulesListPage() {
+  usePageTitle('Règles');
   const { user } = useAuth();
   const [filters, setFilters] = usePref<RuleFilters>('rulesFilters', DEFAULT_FILTERS);
   const [q, setQ] = useState(filters.q ?? '');

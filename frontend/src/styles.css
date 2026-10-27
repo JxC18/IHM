@@ -186,17 +186,87 @@ main {
   margin-bottom: 20px;
   flex-wrap: wrap;
 }
+.page-head > div:first-child {
+  flex: 1 1 420px;
+  min-width: 0;
+}
 .page-head p {
   margin: 4px 0 0;
   color: var(--text-2);
 }
-.breadcrumb {
+/* Fil d'Ariane : retour + chemin */
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  min-width: 0;
   font-size: 13px;
-  color: var(--text-3);
-  margin-bottom: 6px;
 }
-.breadcrumb a {
+.crumb-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  max-width: 260px;
+  height: 28px;
+  padding: 0 10px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font: inherit;
+  font-weight: 550;
+  cursor: pointer;
+}
+.crumb-back:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.crumb-back-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crumbs ol {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
   color: var(--text-3);
+}
+.crumbs li {
+  min-width: 0;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crumbs li.crumb-sep {
+  flex: none;
+}
+.crumbs a {
+  color: var(--text-2);
+  text-decoration: none;
+}
+.crumbs a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.crumbs [aria-current='page'] {
+  color: var(--text);
+  font-weight: 550;
+}
+.crumb-sep {
+  color: var(--text-3);
+}
+@media (max-width: 600px) {
+  .crumbs ol {
+    display: none;
+  }
 }
 
 /* ---------- Surfaces ---------- */
@@ -1311,17 +1381,49 @@ details summary {
 .kpi-link:hover {
   border-color: var(--accent);
 }
+/* Cartes d'une même rangée : même hauteur, pied de carte aligné en bas. */
 .overview-row {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
 }
 .overview-cols {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* 2 ou 3 colonnes selon les cartes affichées (« Mes brouillons » est masquée s'il n'y en a pas). */
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
+}
+.overview-row > .card,
+.overview-cols > .card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.card-body {
+  flex: 1;
+}
+/* Contenu centré verticalement quand la carte voisine de la rangée est plus haute. */
+.card-body.centered {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.card-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 10px 20px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--accent);
+  text-decoration: none;
+}
+.card-foot:hover {
+  background: var(--surface-2);
+  text-decoration: underline;
 }
 .ov-list {
   list-style: none;

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { RULE_STATUSES, type RuleFilters, type RuleStatus, type RuleSummary } from '../api/types';
@@ -10,6 +10,19 @@ import { DEFAULT_WATCH_THRESHOLD, productionHealth, type ProductionHealth } from
 import { queryHash } from '../lib/sql';
 import { useAsync } from '../lib/useAsync';
 import { readPref, writePref } from '../prefs/prefs';
+import { usePageTitle } from '../nav/history';
+
+/** Nombre d'éléments par liste : les trois cartes du bas gardent des hauteurs comparables. */
+const LIST_MAX = 4;
+
+/** Pied de carte : lien vers la page complète, aligné en bas de chaque carte. */
+function CardFoot({ to, onClick, children }: { to: string; onClick?: () => void; children: ReactNode }) {
+  return (
+    <Link to={to} onClick={onClick} className="card-foot">
+      {children} <span aria-hidden="true">→</span>
+    </Link>
+  );
+}
 
 const LIST_FILTERS: RuleFilters = { q: '', status: '', typology: '', owner: '', criticality: '', sort: 'updated_desc' };
 
@@ -20,6 +33,7 @@ function readyToSubmit(r: RuleSummary): boolean {
 }
 
 export function OverviewPage() {
+  usePageTitle("Vue d'ensemble");
   const { user } = useAuth();
   const nav = useNavigate();
   const rules = useAsync(() => api.listRules({}), []);
@@ -46,7 +60,7 @@ export function OverviewPage() {
   const watch = health.filter((h) => h.reasons.length);
   const myDrafts = all.filter((r) => r.status === 'DRAFT' && r.ownerMatricule === user?.matricule);
   const myReady = myDrafts.filter(readyToSubmit);
-  const recent = (audit.data ?? []).filter((e) => e.action !== 'LOGIN').slice(0, 6);
+  const activity = (audit.data ?? []).filter((e) => e.action !== 'LOGIN');
   const maxStatus = Math.max(1, ...RULE_STATUSES.map(count));
 
   return (
@@ -95,11 +109,8 @@ export function OverviewPage() {
                 <h2 id="ov-precision">Précision des règles en production</h2>
                 <p>30 derniers jours · confirmées frauduleuses ÷ commandes traitées · la moins précise en premier</p>
               </div>
-              <Link to="/production" className="btn btn-sm">
-                Détail
-              </Link>
             </div>
-            <div className="card-pad">
+            <div className="card-pad card-body centered">
               {prod.error ? (
                 <Alert kind="error" title={prod.error.message} />
               ) : !prod.data ? (
@@ -110,6 +121,7 @@ export function OverviewPage() {
                 <PrecisionBars rows={health} threshold={threshold} />
               )}
             </div>
+            <CardFoot to="/production">Voir la vue production</CardFoot>
           </section>
 
           <section className="card" aria-labelledby="ov-lifecycle">
@@ -119,7 +131,7 @@ export function OverviewPage() {
                 <p>{fmtInt(all.length)} règles au total, version courante</p>
               </div>
             </div>
-            <ul className="status-bars">
+            <ul className="status-bars card-body">
               {RULE_STATUSES.map((s) => (
                 <li key={s}>
                   <button type="button" className="status-bar" onClick={() => openList({ status: s })} title={`Voir les règles « ${s} »`}>
@@ -132,6 +144,9 @@ export function OverviewPage() {
                 </li>
               ))}
             </ul>
+            <CardFoot to="/rules" onClick={() => writePref('rulesFilters', LIST_FILTERS)}>
+              Voir toutes les règles
+            </CardFoot>
           </section>
         </div>
 
@@ -141,10 +156,10 @@ export function OverviewPage() {
               <h2 id="ov-watch">À surveiller</h2>
             </div>
             {watch.length === 0 ? (
-              <div className="empty">Aucune règle à surveiller.</div>
+              <div className="empty card-body">Aucune règle à surveiller.</div>
             ) : (
-              <ul className="ov-list">
-                {watch.map((w) => (
+              <ul className="ov-list card-body">
+                {watch.slice(0, LIST_MAX).map((w) => (
                   <li key={w.ruleId}>
                     <Link to={`/rules/${w.ruleId}`} className="rule-link">
                       {w.name}
@@ -158,20 +173,17 @@ export function OverviewPage() {
                 ))}
               </ul>
             )}
+            <CardFoot to="/production">{watch.length > LIST_MAX ? `Voir les ${watch.length} règles à surveiller` : 'Voir la vue production'}</CardFoot>
           </section>
 
+          {/* Masquée sans brouillon : les cartes restantes se partagent la largeur. */}
+          {myDrafts.length > 0 && (
           <section className="card" aria-labelledby="ov-drafts">
             <div className="card-head">
               <h2 id="ov-drafts">Mes brouillons</h2>
-              <Link to="/rules/new" className="btn btn-sm">
-                + Nouvelle règle
-              </Link>
             </div>
-            {myDrafts.length === 0 ? (
-              <div className="empty">Aucun brouillon en cours.</div>
-            ) : (
-              <ul className="ov-list">
-                {myDrafts.map((r) => (
+              <ul className="ov-list card-body">
+                {myDrafts.slice(0, LIST_MAX).map((r) => (
                   <li key={r.ruleId}>
                     <Link to={`/rules/${r.ruleId}`} className="rule-link">
                       {r.name} <span className="muted small">v{r.version}</span>
@@ -186,21 +198,21 @@ export function OverviewPage() {
                   </li>
                 ))}
               </ul>
-            )}
+            <CardFoot to="/rules" onClick={() => writePref('rulesFilters', { ...LIST_FILTERS, status: 'DRAFT', owner: user?.matricule ?? '' })}>
+              {myDrafts.length > LIST_MAX ? `Voir mes ${myDrafts.length} brouillons` : 'Voir mes brouillons'}
+            </CardFoot>
           </section>
+          )}
 
           <section className="card" aria-labelledby="ov-activity">
             <div className="card-head">
               <h2 id="ov-activity">Activité récente</h2>
-              <Link to="/audit" className="btn btn-sm">
-                Journal
-              </Link>
             </div>
-            {recent.length === 0 ? (
-              <div className="empty">Aucune activité.</div>
+            {activity.length === 0 ? (
+              <div className="empty card-body">Aucune activité.</div>
             ) : (
-              <ul className="ov-list">
-                {recent.map((e) => (
+              <ul className="ov-list card-body">
+                {activity.slice(0, LIST_MAX).map((e) => (
                   <li key={e.id}>
                     <span className="small">
                       <strong>{e.userName}</strong> · {ACTION_LABEL[e.action].toLowerCase()}
@@ -217,6 +229,7 @@ export function OverviewPage() {
                 ))}
               </ul>
             )}
+            <CardFoot to="/audit">Tout le journal d'audit</CardFoot>
           </section>
         </div>
       </div>

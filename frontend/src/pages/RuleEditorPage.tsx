@@ -4,6 +4,8 @@ import { api } from '../api/client';
 import { CRITICALITIES, SCHEDULES, type RuleDetail, type RuleInput, type SqlIssue } from '../api/types';
 import { SqlEditor, type SqlEditorHandle } from '../components/SqlEditor';
 import { TestPanel } from '../components/TestPanel';
+import { Breadcrumb } from '../components/Breadcrumb';
+import { usePageTitle } from '../nav/history';
 import { Alert, Spinner, StatusBadge } from '../components/ui';
 import { CRITICALITY_LABEL, FRAUD_TYPOLOGIES, SCHEDULE_LABEL, STATUS_LABEL, fmtDateTime } from '../lib/format';
 import { checkParams, queryHash } from '../lib/sql';
@@ -124,6 +126,7 @@ export function RuleEditorPage() {
   };
   const formValid = !Object.values(missing).some(Boolean) && !nameTaken;
   const createsVersion = rule && rule.status !== 'DRAFT';
+  usePageTitle(rule ? `${createsVersion ? 'Nouvelle version' : 'Modifier'} · ${rule.name}` : ruleId ? undefined : 'Nouvelle règle');
   const canSubmit = formValid && execHash === hash && !paramIssues.some((i) => i.severity === 'error');
 
   async function persist(): Promise<RuleDetail> {
@@ -158,17 +161,19 @@ export function RuleEditorPage() {
 
   return (
     <form onSubmit={save} noValidate>
+      <Breadcrumb
+        items={
+          rule
+            ? [
+                { label: 'Règles', to: '/rules' },
+                { label: rule.name, to: `/rules/${rule.ruleId}` },
+                { label: createsVersion ? 'Nouvelle version' : 'Modifier' },
+              ]
+            : [{ label: 'Règles', to: '/rules' }, { label: 'Nouvelle règle' }]
+        }
+      />
       <div className="page-head">
         <div>
-          <div className="breadcrumb">
-            <Link to="/rules">Règles</Link>
-            {rule && (
-              <>
-                {' / '}
-                <Link to={`/rules/${rule.ruleId}`}>{rule.name}</Link>
-              </>
-            )}
-          </div>
           <h1>{rule ? (createsVersion ? `Nouvelle version — ${rule.name}` : `Modifier — ${rule.name}`) : 'Nouvelle règle'}</h1>
           <p>Décrivez la règle, écrivez la requête, testez-la, puis soumettez-la à l'équipe data.</p>
         </div>

@@ -4,8 +4,10 @@ import { api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { Alert } from '../components/ui';
 import { useTheme, type ThemePref } from '../prefs/prefs';
+import { usePageTitle } from '../nav/history';
 
 export function ProfilePage() {
+  usePageTitle('Profil');
   const { user, refresh, logout } = useAuth();
   const nav = useNavigate();
   const [theme, setTheme] = useTheme();

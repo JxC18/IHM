@@ -6,12 +6,14 @@ import { fmtInt, fmtPct } from '../lib/format';
 import { DEFAULT_WATCH_THRESHOLD, productionHealth, type ProductionHealth } from '../lib/metrics';
 import { useAsync } from '../lib/useAsync';
 import { usePref } from '../prefs/prefs';
+import { usePageTitle } from '../nav/history';
 
 type SortKey = 'precision' | 'volume' | 'processing' | 'name';
 
 type Row = ProductionHealth;
 
 export function ProductionPage() {
+  usePageTitle('Production');
   const data = useAsync(() => api.getConsolidated(), []);
   const [threshold, setThreshold] = usePref<number>('watchPrecisionThreshold', DEFAULT_WATCH_THRESHOLD);
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'precision', dir: 1 });
