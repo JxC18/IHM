@@ -37,12 +37,13 @@ def test_parcours_complet_creation_test_soumission(client, bq):
     r = client.post(f"/rules/{rid}/submit")
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "SUBMITTED"
-    assert bq.published[-1] == (rid, 1, "SUBMITTED")
+    assert bq.published == [(rid, 1, "SUBMITTED")]  # le brouillon n'a jamais été publié
 
     # Soumise mais jamais exécutée par Airflow : modifiable sur place, elle repasse en brouillon.
     r = client.put(f"/rules/{rid}", json={**RULE, "description": "v1 corrigée"}).json()
     assert (r["version"], r["status"], r["versionCount"]) == (1, "DRAFT", 1)
-    assert bq.published[-1] == (rid, 1, "DRAFT")
+    # Elle sort de rules_registry : Airflow ne peut plus la prendre.
+    assert bq.published[-1] == (rid, 1, "RETIRÉE")
 
     # Les lignes ne sont jamais persistées : seules les métadonnées apparaissent.
     tests = client.get(f"/rules/{rid}").json()["tests"]

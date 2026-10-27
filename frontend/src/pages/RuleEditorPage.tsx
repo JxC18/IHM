@@ -216,7 +216,8 @@ export function RuleEditorPage() {
         )}
         {withdraws && (
           <Alert kind="info" title={`La v${rule.version} est soumise mais pas encore en production : vous pouvez la modifier.`}>
-            L'enregistrement la repasse en brouillon (toujours v{rule.version}) et l'équipe data est prévenue que la soumission est retirée.
+            L'enregistrement la repasse en brouillon (toujours v{rule.version}) : elle est retirée de{' '}
+            <span className="mono">rules_registry</span>, Airflow ne peut donc plus la prendre, et l'équipe data est prévenue.
             Il faudra la retester puis la soumettre à nouveau.
           </Alert>
         )}

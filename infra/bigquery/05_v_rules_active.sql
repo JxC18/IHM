@@ -1,8 +1,9 @@
 -- Version à exécuter pour chaque règle : la dernière version soumise (contrat Airflow).
 -- Le DAG lit ici la requête à chaque run, par rule_id :
 --   SELECT sql_query, version FROM v_rules_active WHERE rule_id = @rule_id
--- Une nouvelle version soumise est donc exécutée dès le run suivant, sans action de l'équipe data ;
--- les brouillons (dont une version soumise reprise pour modification) ne sont jamais exécutés.
+-- Une nouvelle version soumise est donc exécutée dès le run suivant, sans action de l'équipe data.
+-- rules_registry ne contient que des versions soumises (une version reprise en brouillon en est
+-- retirée) : le filtre sur status n'est qu'une sécurité.
 CREATE OR REPLACE VIEW `${PROJECT}.${DATASET}.v_rules_active` AS
 SELECT rule_id, version, name, schedule, sql_query
 FROM `${PROJECT}.${DATASET}.rules_registry`

@@ -211,8 +211,10 @@ navigateur ──► front (Nginx, Cloud Run) ──/api──► API FastAPI (C
     le statut redevient « En production » dès que les runs reprennent ;
   - *Remplacée* : une version plus récente a été soumise ou tourne à sa place.
 
-  Une version **soumise mais jamais exécutée** reste modifiable : elle repasse en brouillon (même numéro), l'équipe
-  data est prévenue (`RULE_SUBMISSION_WITHDRAWN`), puis elle doit être retestée et resoumise. Dès qu'une version
+  Une version **soumise mais jamais exécutée** reste modifiable : elle repasse en brouillon (même numéro), sort de
+  `rules_registry`, l'équipe data est prévenue (`RULE_SUBMISSION_WITHDRAWN`), puis elle doit être retestée et
+  resoumise. **Les brouillons ne sont jamais écrits dans `rules_registry`** : ils restent dans la base de la
+  plateforme (partagés entre postes et collègues), la saisie non enregistrée étant, elle, gardée dans le navigateur. Dès qu'une version
   a tourné, elle est figée et toute modification crée une nouvelle version.
 
   **Contrat côté Airflow, à valider avec l'équipe data** : le DAG ne recopie pas la requête, il l'exécute telle

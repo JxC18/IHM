@@ -88,7 +88,11 @@ class BigQueryGateway(Protocol):
     def run_stats(self) -> list[RunStats]: ...
 
     def publish_rule(self, v: RuleVersion, owner_matricule: str, status: str) -> None:
-        """Écrit la version dans `rules_registry` (création ou mise à jour), avec son statut affiché."""
+        """Écrit une version soumise dans `rules_registry` (création ou mise à jour) avec son statut."""
+        ...
+
+    def unpublish_rule(self, rule_id: str, version: int) -> None:
+        """Retire de `rules_registry` une version soumise que l'analyste a reprise en brouillon."""
         ...
 
 
@@ -249,6 +253,14 @@ class BigQueryRegistry:
         )
         return [RunStats(**r) for r in rows]
 
+    def unpublish_rule(self, rule_id: str, version: int) -> None:
+        P = self._bq.ScalarQueryParameter
+        cfg = self._bq.QueryJobConfig(
+            query_parameters=[P("rule_id", "STRING", rule_id), P("version", "INT64", version)]
+        )
+        sql = f"DELETE FROM {self.ds}.rules_registry WHERE rule_id = @rule_id AND version = @version"
+        self.client.query(sql, job_config=cfg).result()
+
     def publish_rule(self, v: RuleVersion, owner_matricule: str, status: str) -> None:
         P = self._bq.ScalarQueryParameter
         params = [
@@ -373,6 +385,10 @@ class FakeBigQueryGateway:
     def publish_rule(self, v, owner_matricule, status):
         log.info("rules_registry ← %s v%s (%s)", v.rule_id, v.version, status)
         self.published.append((v.rule_id, v.version, status))
+
+    def unpublish_rule(self, rule_id, version):
+        log.info("rules_registry ✕ %s v%s", rule_id, version)
+        self.published.append((rule_id, version, "RETIRÉE"))
 
 
 @lru_cache

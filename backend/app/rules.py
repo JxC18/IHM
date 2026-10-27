@@ -214,8 +214,11 @@ def _commit_name(db: Session, name: str) -> None:
 
 
 def _publish(bq: BigQueryGateway, rule: Rule, *versions: RuleVersion) -> None:
+    """Met à jour `rules_registry`, qui ne contient que des versions soumises : les brouillons restent
+    dans la base de la plateforme et ne sont jamais visibles de l'équipe data ni d'Airflow."""
     for v in versions:
-        bq.publish_rule(v, rule.owner_matricule, derive_status(rule, v))
+        if v.status != "DRAFT":
+            bq.publish_rule(v, rule.owner_matricule, derive_status(rule, v))
 
 
 def sync_runs(db: Session, bq: BigQueryGateway) -> int:
@@ -374,7 +377,11 @@ def update_rule(
             f"Nouvelle version créée à partir de la v{cur.version} ({cur.status})",
         )
     _commit_name(db, data.name)
-    _publish(bq, rule, target)
+    if withdrawn:
+        # La version redevient un brouillon : elle sort de rules_registry, Airflow ne peut plus la prendre.
+        bq.unpublish_rule(target.rule_id, target.version)
+    else:
+        _publish(bq, rule, target)
     if withdrawn:
         notify_data_team("RULE_SUBMISSION_WITHDRAWN", target, user.matricule)
     return detail(db, rule)
