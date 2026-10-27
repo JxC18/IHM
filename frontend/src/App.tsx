@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { BrowserRouter, MemoryRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { useTheme } from './prefs/prefs';
@@ -25,6 +25,9 @@ function RequireUser({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+// Hébergement sans réécriture d'URL (page de démo autonome) : navigation en mémoire.
+const Router = import.meta.env.VITE_ROUTER === 'memory' ? MemoryRouter : BrowserRouter;
+
 function ThemeRoot({ children }: { children: ReactNode }) {
   useTheme();
   return <>{children}</>;
@@ -34,7 +37,7 @@ export function App() {
   return (
     <ThemeRoot>
       <AuthProvider>
-        <BrowserRouter>
+        <Router>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route
@@ -55,7 +58,7 @@ export function App() {
               <Route path="*" element={<div className="empty">Page introuvable.</div>} />
             </Route>
           </Routes>
-        </BrowserRouter>
+        </Router>
       </AuthProvider>
     </ThemeRoot>
   );
