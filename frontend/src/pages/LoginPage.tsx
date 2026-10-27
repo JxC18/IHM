@@ -18,7 +18,7 @@ export function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [touched, setTouched] = useState(false);
 
-  const from = (loc.state as { from?: string } | null)?.from ?? '/rules';
+  const from = (loc.state as { from?: string } | null)?.from ?? '/';
   if (user && step === 'code') return <Navigate to={from} replace />;
 
   const formatError = touched && !MATRICULE_RE.test(matricule) ? 'Le matricule doit comporter exactement 6 chiffres.' : undefined;

@@ -1,4 +1,5 @@
-import type { DailyPerformance } from '../api/types';
+import type { ConsolidatedRow, DailyPerformance } from '../api/types';
+import { fmtPct } from './format';
 
 /** Seuils de fiabilité du taux de précision (PRD F6, point d'attention). */
 export const MIN_PROCESSING_RATE = 0.5;
@@ -35,4 +36,27 @@ export function delta(cur: number | null, prev: number | null, kind: 'relative' 
   if (cur === null || prev === null) return null;
   if (kind === 'points') return cur - prev;
   return prev === 0 ? null : (cur - prev) / prev;
+}
+
+/** Seuil de précision « à surveiller » par défaut, réglable dans la vue production (PRD F7). */
+export const DEFAULT_WATCH_THRESHOLD = 0.15;
+
+export interface ProductionHealth extends ConsolidatedRow {
+  processingRate: number | null;
+  precision: number | null;
+  lowSample: boolean;
+  /** Raisons de surveiller la règle ; vide si tout va bien. */
+  reasons: string[];
+}
+
+/** Indicateurs sur 30 jours d'une règle en production et motifs de surveillance (PRD F7). */
+export function productionHealth(r: ConsolidatedRow, threshold: number): ProductionHealth {
+  const processingRate = r.ordersFlagged30d ? r.ordersProcessed30d / r.ordersFlagged30d : null;
+  const precision = r.ordersProcessed30d ? r.ordersConfirmed30d / r.ordersProcessed30d : null;
+  const lowSample =
+    processingRate === null || processingRate < MIN_PROCESSING_RATE || r.ordersProcessed30d < MIN_PROCESSED_ORDERS;
+  const reasons: string[] = [];
+  if (r.ordersFlagged30d === 0) reasons.push('Aucune remontée sur 30 jours — règle probablement cassée');
+  if (precision !== null && precision < threshold) reasons.push(`Précision sous le seuil de ${fmtPct(threshold)}`);
+  return { ...r, processingRate, precision, lowSample, reasons };
 }

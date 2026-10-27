@@ -4,7 +4,7 @@ import { useAuth } from '../auth/AuthContext';
 import { API_MODE } from '../api/client';
 import { usePref } from '../prefs/prefs';
 import { Initials } from './ui';
-import { IconAudit, IconChart, IconCollapse, IconPlus, IconRules } from './icons';
+import { IconAudit, IconChart, IconCollapse, IconHome, IconPlus, IconRules } from './icons';
 
 function NavItem({ to, end, icon, label }: { to: string; end?: boolean; icon: ReactNode; label: string }) {
   return (
@@ -26,7 +26,7 @@ export function Layout() {
       </a>
       <aside className="sidebar">
         <div className="sidebar-head">
-          <Link to="/rules" className="brand" title="Rules Manager">
+          <Link to="/" className="brand" title="Rules Manager">
             <span className="brand-mark" aria-hidden="true">R</span>
             <span className="nav-label">Rules Manager</span>
           </Link>
@@ -40,12 +40,15 @@ export function Layout() {
             <IconCollapse collapsed={collapsed} />
           </button>
         </div>
+        <Link to="/rules/new" className="btn btn-primary sidebar-cta" title="Nouvelle règle">
+          <IconPlus />
+          <span className="nav-label">Nouvelle règle</span>
+        </Link>
         <nav className="nav" aria-label="Navigation principale">
-          <span className="nav-section">Règles</span>
-          <NavItem to="/rules" end icon={<IconRules />} label="Toutes les règles" />
-          <NavItem to="/rules/new" icon={<IconPlus />} label="Nouvelle règle" />
-          <span className="nav-section">Pilotage</span>
-          <NavItem to="/production" icon={<IconChart />} label="Vue production" />
+          <NavItem to="/" end icon={<IconHome />} label="Vue d'ensemble" />
+          {/* Sans `end` : reste active sur la fiche, la modification et la création d'une règle. */}
+          <NavItem to="/rules" icon={<IconRules />} label="Règles" />
+          <NavItem to="/production" icon={<IconChart />} label="Production" />
           <NavItem to="/audit" icon={<IconAudit />} label="Journal d'audit" />
         </nav>
         {API_MODE === 'mock' && (

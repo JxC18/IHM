@@ -11,6 +11,14 @@ const base = {
   'aria-hidden': true,
 };
 
+export const IconHome = () => (
+  <svg {...base}>
+    <rect x="3.5" y="3.5" width="7" height="9" rx="1.5" />
+    <rect x="13.5" y="3.5" width="7" height="5" rx="1.5" />
+    <rect x="3.5" y="15.5" width="7" height="5" rx="1.5" />
+    <rect x="13.5" y="11.5" width="7" height="9" rx="1.5" />
+  </svg>
+);
 export const IconRules = () => (
   <svg {...base}>
     <path d="M9 6h11M9 12h11M9 18h11" />
@@ -21,8 +29,7 @@ export const IconRules = () => (
 );
 export const IconPlus = () => (
   <svg {...base}>
-    <rect x="3.5" y="3.5" width="17" height="17" rx="4" />
-    <path d="M12 8v8M8 12h8" />
+    <path d="M12 5v14M5 12h14" />
   </svg>
 );
 export const IconChart = () => (

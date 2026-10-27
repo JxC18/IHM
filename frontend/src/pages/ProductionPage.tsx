@@ -1,39 +1,23 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
-import type { ConsolidatedRow } from '../api/types';
 import { Alert, CriticalityBadge, Spinner } from '../components/ui';
 import { fmtInt, fmtPct } from '../lib/format';
-import { MIN_PROCESSED_ORDERS, MIN_PROCESSING_RATE } from '../lib/metrics';
+import { DEFAULT_WATCH_THRESHOLD, productionHealth, type ProductionHealth } from '../lib/metrics';
 import { useAsync } from '../lib/useAsync';
 import { usePref } from '../prefs/prefs';
 
 type SortKey = 'precision' | 'volume' | 'processing' | 'name';
 
-interface Row extends ConsolidatedRow {
-  processingRate: number | null;
-  precision: number | null;
-  lowSample: boolean;
-  reasons: string[];
-}
+type Row = ProductionHealth;
 
 export function ProductionPage() {
   const data = useAsync(() => api.getConsolidated(), []);
-  const [threshold, setThreshold] = usePref<number>('watchPrecisionThreshold', 0.15);
+  const [threshold, setThreshold] = usePref<number>('watchPrecisionThreshold', DEFAULT_WATCH_THRESHOLD);
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'precision', dir: 1 });
   const [onlyWatch, setOnlyWatch] = useState(false);
 
-  const rows = useMemo<Row[]>(() => {
-    return (data.data ?? []).map((r) => {
-      const processingRate = r.ordersFlagged30d ? r.ordersProcessed30d / r.ordersFlagged30d : null;
-      const precision = r.ordersProcessed30d ? r.ordersConfirmed30d / r.ordersProcessed30d : null;
-      const lowSample = processingRate === null || processingRate < MIN_PROCESSING_RATE || r.ordersProcessed30d < MIN_PROCESSED_ORDERS;
-      const reasons: string[] = [];
-      if (r.ordersFlagged30d === 0) reasons.push('Aucune remontée sur 30 jours — règle probablement cassée');
-      if (precision !== null && precision < threshold) reasons.push(`Précision sous le seuil de ${fmtPct(threshold)}`);
-      return { ...r, processingRate, precision, lowSample, reasons };
-    });
-  }, [data.data, threshold]);
+  const rows = useMemo<Row[]>(() => (data.data ?? []).map((r) => productionHealth(r, threshold)), [data.data, threshold]);
 
   const sorted = useMemo(() => {
     const val = (r: Row): number | string =>
@@ -61,7 +45,7 @@ export function ProductionPage() {
     <>
       <div className="page-head">
         <div>
-          <h1>Vue production</h1>
+          <h1>Règles en production</h1>
           <p>Toutes les règles en production, sur les 30 derniers jours.</p>
         </div>
       </div>

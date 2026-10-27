@@ -11,6 +11,7 @@ import { RuleDetailPage } from './pages/RuleDetailPage';
 import { ProductionPage } from './pages/ProductionPage';
 import { AuditPage } from './pages/AuditPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { OverviewPage } from './pages/OverviewPage';
 
 function RequireUser({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
@@ -47,7 +48,7 @@ export function App() {
                 </RequireUser>
               }
             >
-              <Route path="/" element={<Navigate to="/rules" replace />} />
+              <Route path="/" element={<OverviewPage />} />
               <Route path="/rules" element={<RulesListPage />} />
               <Route path="/rules/new" element={<RuleEditorPage />} />
               <Route path="/rules/:ruleId" element={<RuleDetailPage />} />
