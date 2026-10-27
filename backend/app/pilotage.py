@@ -41,6 +41,7 @@ def performance(
         daily=bq.daily_performance(rule_id, from_, to),
         previous=bq.daily_performance(rule_id, prev_to - timedelta(days=length - 1), prev_to),
         runs=bq.runs(rule_id, from_, to),
+        versions=bq.version_totals(rule_id),
         latency_days=s.latency_days,
     )
 

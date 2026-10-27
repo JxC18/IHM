@@ -223,7 +223,10 @@ export function RuleEditorPage() {
         {createsVersion && (
           <Alert kind="warn" title={`La version v${rule.version} est « ${STATUS_LABEL[rule.status]} » et n'est plus modifiable.`}>
             L'enregistrement créera la version <strong>v{rule.version + 1}</strong> en brouillon. La v{rule.version} reste inchangée
-            {rule.status === 'IN_PRODUCTION' ? ' et continue de tourner en production' : ''}.
+            {rule.status === 'IN_PRODUCTION' || rule.status === 'INACTIVE'
+              ? ` et continue de tourner jusqu'à la soumission de la v${rule.version + 1} : Airflow exécute toujours la dernière version soumise`
+              : ''}
+            .
           </Alert>
         )}
         {error && <Alert kind="error" title={error} />}

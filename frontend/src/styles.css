@@ -886,6 +886,16 @@ table.data tr:last-child td {
   fill: var(--series-1);
   opacity: 0.08;
 }
+.chart .marker line {
+  stroke: var(--text-2);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+.chart .marker text {
+  fill: var(--text-2);
+  font-size: 11px;
+  font-weight: 650;
+}
 .chart .crosshair {
   stroke: var(--text-3);
   stroke-width: 1;

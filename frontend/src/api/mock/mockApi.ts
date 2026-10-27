@@ -15,6 +15,7 @@ import {
   type RuleVersion,
   type TestRecord,
   type User,
+  type VersionPerformance,
 } from '../types';
 import { buildSeed, SCHEMA_VERSION, type MockDb, type MockRule } from './seed';
 import { simulateDryRun, simulateExecution } from './bigquery';
@@ -201,12 +202,31 @@ export function createMockApi(): Api {
     return undefined;
   }
 
+  function versionTotals(r: MockRule): VersionPerformance[] {
+    const start = Object.values(r.productionSince).sort()[0];
+    if (!start) return [];
+    const by = new Map<number, DailyPerformance[]>();
+    for (const d of daily(r, start, isoDate(new Date()))) by.set(d.ruleVersion!, [...(by.get(d.ruleVersion!) ?? []), d]);
+    return [...by.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([version, ds]) => ({
+        version,
+        firstDate: ds[0].date,
+        lastDate: ds[ds.length - 1].date,
+        days: ds.length,
+        ordersFlagged: ds.reduce((s, x) => s + x.ordersFlagged, 0),
+        ordersProcessed: ds.reduce((s, x) => s + x.ordersProcessed, 0),
+        ordersConfirmedFraud: ds.reduce((s, x) => s + x.ordersConfirmedFraud, 0),
+      }));
+  }
+
   function daily(r: MockRule, from: string, to: string): DailyPerformance[] {
     const out: DailyPerformance[] = [];
-    const p = r.profile;
     const today = isoDate(new Date());
     for (let d = from; d <= to && d <= today; d = addDays(d, 1)) {
-      if (!p || versionAt(r, d) === undefined) continue;
+      const version = versionAt(r, d);
+      if (!r.profile || version === undefined) continue;
+      const p = { ...r.profile, ...r.versionProfiles?.[version] };
       const age = Math.round((new Date(today).getTime() - new Date(d).getTime()) / 86400000);
       const broken = p.brokenSinceDays !== undefined && age < p.brokenSinceDays;
       const s = r.ruleId + d;
@@ -216,7 +236,7 @@ export function createMockApi(): Api {
       const latency = Math.min(1, age / LATENCY_DAYS);
       const processed = Math.min(flagged, Math.round(flagged * p.processingRate * latency * (0.85 + rnd(s + 'p') * 0.3)));
       const confirmed = Math.min(processed, Math.round(processed * p.precision * (0.6 + rnd(s + 'c') * 0.8)));
-      out.push({ date: d, ordersFlagged: flagged, ordersProcessed: processed, ordersConfirmedFraud: confirmed });
+      out.push({ date: d, ruleVersion: version, ordersFlagged: flagged, ordersProcessed: processed, ordersConfirmedFraud: confirmed });
     }
     return out;
   }
@@ -501,6 +521,7 @@ export function createMockApi(): Api {
         daily: daily(r, from, to),
         previous: daily(r, addDays(from, -len), addDays(from, -1)),
         runs: runs(r, from, to),
+        versions: versionTotals(r),
         latencyDays: LATENCY_DAYS,
       };
     },
@@ -543,7 +564,11 @@ export function createMockApi(): Api {
         const r = findRule(id);
         const target = [...r.versions].reverse().find((v) => v.status === 'SUBMITTED' && r.productionSince[v.version] === undefined);
         if (!target) throw new ApiError(409, 'Aucune version soumise en attente de mise en production.');
-        r.productionSince[target.version] = isoDate(new Date());
+        const today = isoDate(new Date());
+        // La version qui tournait s'arrête : Airflow exécute désormais la dernière version soumise.
+        const prev = running(r);
+        if (prev && prev.version !== target.version) r.productionUntil[prev.version] = addDays(today, -1);
+        r.productionSince[target.version] = today;
         target.airflowDagId = `fraud_rule_${target.ruleId.slice(0, 8)}_v${target.version}`;
         r.profile ??= { dailyVolume: 10 + Math.round(rnd(id) * 40), processingRate: 0.75, precision: 0.2 + rnd(id + 'p') * 0.4 };
         void u;

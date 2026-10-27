@@ -215,10 +215,13 @@ navigateur ──► front (Nginx, Cloud Run) ──/api──► API FastAPI (C
   data est prévenue (`RULE_SUBMISSION_WITHDRAWN`), puis elle doit être retestée et resoumise. Dès qu'une version
   a tourné, elle est figée et toute modification crée une nouvelle version.
 
-  **Contrat côté Airflow, à valider avec l'équipe data** : le DAG ne recopie pas la requête, il lit `sql_query`
-  dans `rules_registry` à chaque run, en identifiant la règle par son `rule_id` (le nom est modifiable) et en
-  exécutant la **version mise en production par l'équipe data**, pas « la dernière version » (sinon une v2
-  fraîchement soumise partirait en production sans elle).
+  **Contrat côté Airflow, à valider avec l'équipe data** : le DAG ne recopie pas la requête. À chaque run, il lit
+  dans la vue `v_rules_active` (`infra/bigquery/05_v_rules_active.sql`) la **dernière version soumise** de sa
+  règle, identifiée par son `rule_id` (le nom est modifiable). Une nouvelle version soumise tourne donc dès le
+  run suivant, sans action de l'équipe data, qui n'intervient que pour créer le DAG d'une nouvelle règle. Les
+  brouillons ne sont jamais exécutés. Toutes les versions restent conservées dans la plateforme : comparatif
+  SQL, comparaison des performances par version (repères sur les courbes, tableau par version) et
+  **restauration** d'une version antérieure, recopiée en nouvelle version à tester puis soumettre.
 
   Les statuts « Validée » et « Refusée » disparaissent : un refus passe hors plateforme et l'analyste soumet
   une nouvelle version (risque R3 : le motif n'est pas tracé). L'état des runs est recopié par

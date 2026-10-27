@@ -12,6 +12,8 @@ export interface MockRule {
   productionUntil: Record<number, string>;
   /** Comportement simulé des indicateurs. */
   profile?: { dailyVolume: number; processingRate: number; precision: number; brokenSinceDays?: number };
+  /** Variations par version (ex. une v2 au seuil plus strict : moins de volume, plus de précision). */
+  versionProfiles?: Record<number, { dailyVolume?: number; precision?: number }>;
 }
 
 export interface MockDb {
@@ -24,7 +26,7 @@ export interface MockDb {
   usage: Record<string, Record<string, number>>;
 }
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 const daysAgo = (n: number, h = 10) => {
   const d = new Date();
@@ -268,6 +270,8 @@ export function buildSeed(): MockDb {
       productionSince: { 1: daysAgo(150).slice(0, 10), 2: daysAgo(70).slice(0, 10) },
       productionUntil: { 1: daysAgo(71).slice(0, 10) },
       profile: { dailyVolume: 32, processingRate: 0.82, precision: 0.36 },
+      // v1 au seuil de 300 € : plus de remontées, moins précises.
+      versionProfiles: { 1: { dailyVolume: 61, precision: 0.19 } },
     },
     {
       ruleId: R2.id,

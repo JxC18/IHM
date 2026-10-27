@@ -116,10 +116,17 @@ export function RuleDetailPage() {
 
       <div className="stack" style={{ marginBottom: 16 }}>
         {flash === 'saved' && <Alert kind="success" title="Règle enregistrée." />}
+        {flash?.startsWith('restored:') && (
+          <Alert kind="success" title={`Contenu de la v${flash.split(':')[1]} restauré dans la v${r.version} (brouillon).`}>
+            Testez-la puis soumettez-la : Airflow exécutera cette version dès le run suivant.
+          </Alert>
+        )}
         {flash === 'submitted' && (
-          <Alert kind="success" title="Règle soumise à l'équipe data.">
-            Elle est visible dans <span className="mono">rules_registry</span>. Vous pouvez encore la modifier tant qu'Airflow ne l'a pas
-            exécutée : elle repassera alors en brouillon.
+          <Alert kind="success" title="Règle soumise.">
+            {r.versionCount > 1 || r.productionVersion
+              ? 'Airflow exécutera cette version dès le prochain run.'
+              : "L'équipe data est prévenue pour créer le DAG ; Airflow exécutera ensuite toujours la dernière version soumise."}{' '}
+            Vous pouvez encore la modifier tant qu'Airflow ne l'a pas exécutée : elle repassera alors en brouillon.
           </Alert>
         )}
         {actionError && <Alert kind="error" title={actionError} />}
@@ -131,7 +138,9 @@ export function RuleDetailPage() {
         )}
         {r.productionVersion && (
           <Alert kind="info" title={`La v${r.productionVersion} tourne en production.`}>
-            La v{r.version} ({STATUS_LABEL[r.status].toLowerCase()}) la remplacera dès qu'Airflow l'exécutera.
+            {r.status === 'SUBMITTED'
+              ? `La v${r.version}, soumise, la remplacera au prochain run Airflow.`
+              : `La v${r.version} (${STATUS_LABEL[r.status].toLowerCase()}) la remplacera une fois soumise : Airflow exécute toujours la dernière version soumise.`}
           </Alert>
         )}
         {r.status === 'DRAFT' && !testOk && (
@@ -163,7 +172,16 @@ export function RuleDetailPage() {
         {tab === 'definition' && <DefinitionTab r={r} onTested={rule.reload} />}
         {tab === 'performance' && <PerformanceDashboard ruleId={r.ruleId} everInProduction={everInProduction} />}
         {tab === 'tests' && <TestsTab r={r} hash={hash} />}
-        {tab === 'versions' && <VersionsTab r={r} />}
+        {tab === 'versions' && (
+          <VersionsTab
+            r={r}
+            onRestored={(d, from) => {
+              rule.setData(d);
+              setFlash(`restored:${from}`);
+              setTab('definition');
+            }}
+          />
+        )}
         {tab === 'audit' && <RuleAudit ruleId={r.ruleId} />}
       </div>
 
@@ -287,8 +305,34 @@ function TestsTab({ r, hash }: { r: RuleDetail; hash: string }) {
   );
 }
 
-function VersionsTab({ r }: { r: RuleDetail }) {
+function VersionsTab({ r, onRestored }: { r: RuleDetail; onRestored: (d: RuleDetail, from: number) => void }) {
   const versions = r.versions; // plus récente d'abord
+  const [confirming, setConfirming] = useState<number | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState<string>();
+
+  /** Recopie une version antérieure dans la version courante (brouillon) ou dans une nouvelle version. */
+  async function restore(v: RuleVersion) {
+    setRestoring(true);
+    setRestoreError(undefined);
+    try {
+      const d = await api.updateRule(r.ruleId, {
+        name: r.name, // le nom identifie la règle : on garde le nom actuel
+        description: v.description,
+        fraudTypology: v.fraudTypology,
+        criticality: v.criticality,
+        schedule: v.schedule,
+        sqlQuery: v.sqlQuery,
+      });
+      setConfirming(null);
+      onRestored(d, v.version);
+    } catch (e) {
+      setRestoreError((e as Error).message);
+    } finally {
+      setRestoring(false);
+    }
+  }
+
   const [a, setA] = useState(versions[1]?.version ?? versions[0].version);
   const [b, setB] = useState(versions[0].version);
   const [shown, setShown] = useState<RuleVersion | null>(null);
@@ -326,9 +370,27 @@ function VersionsTab({ r }: { r: RuleDetail }) {
                   <td className="small">{v.submittedAt ? fmtDateTime(v.submittedAt) : '—'}</td>
                   <td className="small mono">{v.airflowDagId ?? '—'}</td>
                   <td>
-                    <button type="button" className="btn btn-sm" onClick={() => setShown(shown?.version === v.version ? null : v)} aria-expanded={shown?.version === v.version}>
-                      {shown?.version === v.version ? 'Masquer' : 'Voir le SQL'}
-                    </button>
+                    <div className="row" style={{ gap: 6, flexWrap: 'nowrap', justifyContent: 'flex-end' }}>
+                      <button type="button" className="btn btn-sm" onClick={() => setShown(shown?.version === v.version ? null : v)} aria-expanded={shown?.version === v.version}>
+                        {shown?.version === v.version ? 'Masquer' : 'Voir le SQL'}
+                      </button>
+                      {v.version !== r.version &&
+                        (confirming === v.version ? (
+                          <>
+                            <button type="button" className="btn btn-sm btn-primary" disabled={restoring} onClick={() => restore(v)}>
+                              {restoring && <span className="spinner" aria-hidden="true" />}
+                              Confirmer
+                            </button>
+                            <button type="button" className="btn btn-sm btn-ghost" onClick={() => setConfirming(null)}>
+                              Annuler
+                            </button>
+                          </>
+                        ) : (
+                          <button type="button" className="btn btn-sm" onClick={() => setConfirming(v.version)} title={`Repartir de la v${v.version}`}>
+                            Restaurer
+                          </button>
+                        ))}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -337,6 +399,15 @@ function VersionsTab({ r }: { r: RuleDetail }) {
         </div>
       </div>
 
+      {confirming !== null && (
+        <Alert kind="info" title={`Restaurer la v${confirming} ?`}>
+          {r.status === 'DRAFT' || r.status === 'SUBMITTED'
+            ? `Le contenu de la v${confirming} remplace celui de la v${r.version}, qui repasse en brouillon.`
+            : `Une v${r.version + 1} est créée en brouillon avec le contenu de la v${confirming}. La v${r.version} continue de tourner jusqu'à la soumission de la v${r.version + 1}.`}{' '}
+          Il faudra ensuite la tester et la soumettre.
+        </Alert>
+      )}
+      {restoreError && <Alert kind="error" title={restoreError} />}
       {shown && (
         <section className="card">
           <div className="card-head">

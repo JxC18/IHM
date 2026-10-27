@@ -6,6 +6,8 @@ export interface Point {
   value: number | null;
   /** Lignes secondaires de l'infobulle. */
   detail?: string;
+  /** Version de la règle qui a tourné ce jour-là. */
+  version?: number;
 }
 
 interface Props {
@@ -16,6 +18,8 @@ interface Props {
   yMax?: number;
   /** À partir de cette date, les données sont incomplètes (latence prestataire). */
   incompleteFrom?: string;
+  /** Repères verticaux, ex. la date à laquelle une nouvelle version a commencé à tourner. */
+  markers?: { date: string; label: string }[];
   height?: number;
 }
 
@@ -32,7 +36,7 @@ function niceMax(v: number): number {
  * Courbe journalière à une seule série, axe Y unique (PRD F6 : jamais de double
  * axe). Réticule + infobulle au survol et au clavier (flèches gauche/droite).
  */
-export function LineChart({ label, points, format, yMax, incompleteFrom, height = 200 }: Props) {
+export function LineChart({ label, points, format, yMax, incompleteFrom, markers = [], height = 200 }: Props) {
   const wrap = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(640);
   const [hover, setHover] = useState<number | null>(null);
@@ -135,6 +139,18 @@ export function LineChart({ label, points, format, yMax, incompleteFrom, height 
             </text>
           ))}
         </g>
+        {markers.map((m) => {
+          const i = points.findIndex((p) => p.date === m.date);
+          if (i < 0) return null;
+          return (
+            <g key={m.date} className="marker">
+              <line x1={x(i)} x2={x(i)} y1={M.top} y2={M.top + ih} />
+              <text x={x(i) + 5} y={M.top + 11}>
+                {m.label}
+              </text>
+            </g>
+          );
+        })}
         <path className="line" d={path} />
         {lastIdx >= 0 && (
           <>
@@ -172,6 +188,7 @@ export function LineChart({ label, points, format, yMax, incompleteFrom, height 
           </div>
           <div className="muted">{fmtDate(hp.date)}</div>
           {hp.detail && <div className="muted">{hp.detail}</div>}
+          {hp.version !== undefined && <div className="muted">Version v{hp.version}</div>}
           {incompleteFrom && hp.date >= incompleteFrom && <div className="muted">Traitement prestataire en cours</div>}
         </div>
       )}

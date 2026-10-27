@@ -1,7 +1,7 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from app.bigquery import DryRunMeta, QueryError, RunStats
-from app.schemas import Column
+from app.schemas import Column, DailyPerformance
 from tests.conftest import login
 
 SQL = """SELECT
@@ -177,3 +177,27 @@ def test_version_qui_a_tourne_reste_figee(client, bq):
     client.post("/internal/sync-runs")
     r = client.put(f"/rules/{rid}", json={**RULE, "description": "seuil revu"}).json()
     assert (r["version"], r["status"], r["productionVersion"]) == (2, "DRAFT", 1)
+
+
+def test_performance_par_version(client, bq):
+    login(client)
+    rid = _submit(client)
+    day = date.today() - timedelta(days=3)
+    bq.performance[rid] = [
+        DailyPerformance(
+            date=day, rule_version=1, orders_flagged=40, orders_processed=30, orders_confirmed_fraud=6
+        ),
+        DailyPerformance(
+            date=day + timedelta(days=1),
+            rule_version=2,
+            orders_flagged=10,
+            orders_processed=10,
+            orders_confirmed_fraud=5,
+        ),
+    ]
+    r = client.get(f"/rules/{rid}/performance", params={"from": str(day), "to": str(date.today())}).json()
+    assert [d["ruleVersion"] for d in r["daily"]] == [1, 2]
+    assert [(v["version"], v["ordersFlagged"], v["ordersConfirmedFraud"]) for v in r["versions"]] == [
+        (1, 40, 6),
+        (2, 10, 5),
+    ]

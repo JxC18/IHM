@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { api } from '../api/client';
-import type { DailyPerformance } from '../api/types';
+import type { DailyPerformance, VersionPerformance } from '../api/types';
 import { addDays, daysBetween, fmtDate, fmtDateTime, fmtInt, fmtPct, isoDate } from '../lib/format';
 import { delta, MIN_PROCESSED_ORDERS, MIN_PROCESSING_RATE, totals } from '../lib/metrics';
 import { useAsync } from '../lib/useAsync';
@@ -34,13 +34,23 @@ export function PerformanceDashboard({ ruleId, everInProduction }: { ruleId: str
     const cur = totals(data.daily);
     const prev = totals(data.previous);
     const days = fill(data.from, data.to, data.daily);
-    const volume: Point[] = days.map(({ date, row }) => ({ date, value: row ? row.ordersFlagged : null }));
+    const volume: Point[] = days.map(({ date, row }) => ({ date, value: row ? row.ordersFlagged : null, version: row?.ruleVersion }));
     const precision: Point[] = days.map(({ date, row }) => ({
       date,
       value: row && row.ordersProcessed > 0 ? row.ordersConfirmedFraud / row.ordersProcessed : null,
       detail: row ? `${fmtInt(row.ordersConfirmedFraud)} confirmées / ${fmtInt(row.ordersProcessed)} traitées` : undefined,
+      version: row?.ruleVersion,
     }));
-    return { cur, prev, volume, precision, incompleteFrom: addDays(today, -(data.latencyDays - 1)) };
+    // Un repère sur les deux courbes à chaque changement de version dans la période.
+    const markers: { date: string; label: string }[] = [];
+    let prevVersion: number | undefined;
+    for (const d of data.daily) {
+      if (d.ruleVersion !== undefined && prevVersion !== undefined && d.ruleVersion !== prevVersion) {
+        markers.push({ date: d.date, label: `v${d.ruleVersion}` });
+      }
+      if (d.ruleVersion !== undefined) prevVersion = d.ruleVersion;
+    }
+    return { cur, prev, volume, precision, markers, incompleteFrom: addDays(today, -(data.latencyDays - 1)) };
   }, [data, today]);
 
   if (!everInProduction) {
@@ -154,7 +164,13 @@ export function PerformanceDashboard({ ruleId, everInProduction }: { ruleId: str
               </div>
             </div>
             <div className="card-pad">
-              <LineChart label="Volume remonté par jour" points={view.volume} format={(v) => fmtInt(Math.round(v))} incompleteFrom={view.incompleteFrom} />
+              <LineChart
+                label="Volume remonté par jour"
+                points={view.volume}
+                format={(v) => fmtInt(Math.round(v))}
+                incompleteFrom={view.incompleteFrom}
+                markers={view.markers}
+              />
             </div>
           </section>
 
@@ -166,9 +182,18 @@ export function PerformanceDashboard({ ruleId, everInProduction }: { ruleId: str
               </div>
             </div>
             <div className="card-pad">
-              <LineChart label="Taux de précision par jour" points={view.precision} format={(v) => fmtPct(v)} yMax={1} incompleteFrom={view.incompleteFrom} />
+              <LineChart
+                label="Taux de précision par jour"
+                points={view.precision}
+                format={(v) => fmtPct(v)}
+                yMax={1}
+                incompleteFrom={view.incompleteFrom}
+                markers={view.markers}
+              />
             </div>
           </section>
+
+          {data.versions.length > 0 && <VersionComparison versions={data.versions} />}
 
           <details className="card card-pad">
             <summary>Voir les données journalières</summary>
@@ -242,5 +267,65 @@ export function PerformanceDashboard({ ruleId, everInProduction }: { ruleId: str
         </>
       )}
     </div>
+  );
+}
+
+/** Indicateurs de chaque version sur toute sa période d'exécution, pour juger l'effet d'une modification. */
+function VersionComparison({ versions }: { versions: VersionPerformance[] }) {
+  const rows = versions.map((v) => {
+    const t = totals([{ date: v.lastDate, ordersFlagged: v.ordersFlagged, ordersProcessed: v.ordersProcessed, ordersConfirmedFraud: v.ordersConfirmedFraud }]);
+    return { ...v, ...t, perDay: v.days ? v.ordersFlagged / v.days : 0 };
+  });
+  return (
+    <section className="card">
+      <div className="card-head">
+        <div>
+          <h3>Comparaison des versions</h3>
+          <p>Chaque version sur toute sa période d'exécution par Airflow, indépendamment de la période sélectionnée</p>
+        </div>
+      </div>
+      <div className="table-wrap">
+        <table className="data">
+          <thead>
+            <tr>
+              <th>Version</th>
+              <th>Période d'exécution</th>
+              <th className="num">Remontées / jour</th>
+              <th className="num">Taux de traitement</th>
+              <th className="num">Taux de précision</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => {
+              const before = i > 0 ? rows[i - 1] : null;
+              const d = before ? delta(r.precision, before.precision, 'points') : null;
+              return (
+                <tr key={r.version}>
+                  <td>
+                    <strong>v{r.version}</strong>
+                  </td>
+                  <td className="small">
+                    {fmtDate(r.firstDate)} → {fmtDate(r.lastDate)} <span className="muted">· {fmtInt(r.days)} j</span>
+                  </td>
+                  <td className="num">{fmtInt(Math.round(r.perDay))}</td>
+                  <td className="num">{fmtPct(r.processingRate)}</td>
+                  <td className="num">
+                    <strong>{fmtPct(r.precision)}</strong>
+                    {d !== null && (
+                      <span className="small muted">
+                        {' '}
+                        ({d >= 0 ? '+' : '−'}
+                        {Math.abs(d * 100).toFixed(1).replace('.', ',')} pts)
+                      </span>
+                    )}
+                    {r.lowSample && <div className="small" style={{ color: 'var(--warn)' }}>⚠ échantillon faible</div>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }

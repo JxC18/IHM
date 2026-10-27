@@ -136,6 +136,18 @@ export interface TestRecord {
 
 export interface DailyPerformance {
   date: string; // YYYY-MM-DD
+  /** Version qui a tourné ce jour-là. */
+  ruleVersion?: number;
+  ordersFlagged: number;
+  ordersProcessed: number;
+  ordersConfirmedFraud: number;
+}
+
+export interface VersionPerformance {
+  version: number;
+  firstDate: string;
+  lastDate: string;
+  days: number;
   ordersFlagged: number;
   ordersProcessed: number;
   ordersConfirmedFraud: number;
@@ -159,6 +171,8 @@ export interface PerformanceResponse {
   daily: DailyPerformance[];
   previous: DailyPerformance[];
   runs: RuleRun[];
+  /** Indicateurs cumulés de chaque version sur toute sa période d'exécution. */
+  versions: VersionPerformance[];
   /** Fenêtre de latence du prestataire, en jours (PRD §7.4). */
   latencyDays: number;
 }

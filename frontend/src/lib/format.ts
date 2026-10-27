@@ -10,7 +10,7 @@ export const STATUS_LABEL: Record<RuleStatus, string> = {
 
 export const STATUS_HELP: Record<RuleStatus, string> = {
   DRAFT: 'En cours de rédaction',
-  SUBMITTED: "Soumise à l'équipe data, en attente de mise en production",
+  SUBMITTED: "Soumise : exécutée par Airflow dès le prochain run (ou dès que l'équipe data a créé le DAG)",
   IN_PRODUCTION: 'Exécutée par Airflow',
   INACTIVE: 'Plus aucune exécution Airflow depuis 3 périodes',
   REPLACED: 'Remplacée par une version plus récente',

@@ -85,7 +85,7 @@ export function OverviewPage() {
           <button type="button" className="card kpi kpi-link" onClick={() => openList({ status: 'SUBMITTED' })}>
             <span className="kpi-label">Soumises</span>
             <span className="kpi-value">{fmtInt(count('SUBMITTED'))}</span>
-            <span className="kpi-sub">En attente de mise en production par l'équipe data</span>
+            <span className="kpi-sub">En attente de leur premier run Airflow</span>
           </button>
           <Link to="/production" className="card kpi kpi-link">
             <span className="kpi-label">À surveiller</span>

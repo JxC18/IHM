@@ -17,7 +17,7 @@ from typing import Any, Protocol
 
 from app.core import Settings, get_settings
 from app.database import RuleVersion
-from app.schemas import Column, DailyPerformance, RuleRun
+from app.schemas import Column, DailyPerformance, RuleRun, VersionPerformance
 
 log = logging.getLogger(__name__)
 
@@ -80,6 +80,8 @@ class BigQueryGateway(Protocol):
     def daily_performance(self, rule_id: str, start: date, end: date) -> list[DailyPerformance]: ...
 
     def runs(self, rule_id: str, start: date, end: date, limit: int = 20) -> list[RuleRun]: ...
+
+    def version_totals(self, rule_id: str) -> list[VersionPerformance]: ...
 
     def production_totals(self, rule_ids: list[str], start: date, end: date) -> list[ProductionTotals]: ...
 
@@ -153,7 +155,7 @@ class RealBigQueryGateway:
     def daily_performance(self, rule_id, start, end):
         P = self._bq.ScalarQueryParameter
         rows = self._rows(
-            f"""SELECT run_date, orders_flagged, orders_processed, orders_confirmed_fraud
+            f"""SELECT run_date, rule_version, orders_flagged, orders_processed, orders_confirmed_fraud
                 FROM {self.ds}.v_rule_performance
                 WHERE rule_id = @rule_id AND run_date BETWEEN @start AND @end
                 ORDER BY run_date""",
@@ -162,12 +164,27 @@ class RealBigQueryGateway:
         return [
             DailyPerformance(
                 date=r["run_date"],
+                rule_version=r["rule_version"],
                 orders_flagged=r["orders_flagged"],
                 orders_processed=r["orders_processed"],
                 orders_confirmed_fraud=r["orders_confirmed_fraud"],
             )
             for r in rows
         ]
+
+    def version_totals(self, rule_id):
+        rows = self._rows(
+            f"""SELECT rule_version AS version, MIN(run_date) AS first_date, MAX(run_date) AS last_date,
+                       COUNT(*) AS days, SUM(orders_flagged) AS orders_flagged,
+                       SUM(orders_processed) AS orders_processed,
+                       SUM(orders_confirmed_fraud) AS orders_confirmed_fraud
+                FROM {self.ds}.v_rule_performance
+                WHERE rule_id = @rule_id
+                GROUP BY rule_version
+                ORDER BY rule_version""",
+            [self._bq.ScalarQueryParameter("rule_id", "STRING", rule_id)],
+        )
+        return [VersionPerformance.model_validate(r) for r in rows]
 
     def runs(self, rule_id, start, end, limit=20):
         P = self._bq.ScalarQueryParameter
@@ -318,6 +335,23 @@ class FakeBigQueryGateway:
 
     def runs(self, rule_id, start, end, limit=20):
         return []
+
+    def version_totals(self, rule_id):
+        by: dict[int, list[DailyPerformance]] = {}
+        for d in self.performance.get(rule_id, []):
+            by.setdefault(d.rule_version or 0, []).append(d)
+        return [
+            VersionPerformance(
+                version=v,
+                first_date=min(d.date for d in ds),
+                last_date=max(d.date for d in ds),
+                days=len(ds),
+                orders_flagged=sum(d.orders_flagged for d in ds),
+                orders_processed=sum(d.orders_processed for d in ds),
+                orders_confirmed_fraud=sum(d.orders_confirmed_fraud for d in ds),
+            )
+            for v, ds in sorted(by.items())
+        ]
 
     def production_totals(self, rule_ids, start, end):
         out = []

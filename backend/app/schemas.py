@@ -150,6 +150,19 @@ class ExecutionResult(Model):
 
 class DailyPerformance(Model):
     date: date
+    rule_version: int | None = None  # version qui a tourné ce jour-là
+    orders_flagged: int
+    orders_processed: int
+    orders_confirmed_fraud: int
+
+
+class VersionPerformance(Model):
+    """Indicateurs cumulés d'une version sur toute sa période d'exécution (comparaison des versions)."""
+
+    version: int
+    first_date: date
+    last_date: date
+    days: int
     orders_flagged: int
     orders_processed: int
     orders_confirmed_fraud: int
@@ -173,6 +186,7 @@ class PerformanceResponse(Model):
     daily: list[DailyPerformance]
     previous: list[DailyPerformance]
     runs: list[RuleRun]
+    versions: list[VersionPerformance]
     latency_days: int
 
 
