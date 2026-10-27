@@ -70,3 +70,8 @@ steps:
           --image ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/front:${SHORT_SHA} \
           --ingress internal-and-cloud-load-balancing \
           --set-env-vars API_UPSTREAM=$${API_URL},API_HOST=$${API_URL#https://}
+
+# Synchronisation des statuts depuis rule_runs (à créer une fois, hors pipeline) :
+#   gcloud scheduler jobs create http rules-manager-sync-runs --location ${_REGION} \
+#     --schedule "7 * * * *" --http-method POST --uri "<URL de l'API>/internal/sync-runs" \
+#     --oidc-service-account-email ${_API_SA}

@@ -3,19 +3,17 @@ import type { Criticality, RuleStatus, Schedule } from '../api/types';
 export const STATUS_LABEL: Record<RuleStatus, string> = {
   DRAFT: 'Brouillon',
   SUBMITTED: 'Soumise',
-  VALIDATED: 'Validée',
   IN_PRODUCTION: 'En production',
-  DISABLED: 'Désactivée',
-  REJECTED: 'Refusée',
+  INACTIVE: 'Inactive',
+  REPLACED: 'Remplacée',
 };
 
 export const STATUS_HELP: Record<RuleStatus, string> = {
   DRAFT: 'En cours de rédaction',
-  SUBMITTED: "Soumise à l'équipe data",
-  VALIDATED: "Acceptée, en attente d'industrialisation",
-  IN_PRODUCTION: 'DAG Airflow actif',
-  DISABLED: 'Arrêtée',
-  REJECTED: 'Refusée, avec motif',
+  SUBMITTED: "Soumise à l'équipe data, en attente de mise en production",
+  IN_PRODUCTION: 'Exécutée par Airflow',
+  INACTIVE: 'Plus aucune exécution Airflow depuis 3 périodes',
+  REPLACED: 'Remplacée par une version plus récente',
 };
 
 export const CRITICALITY_LABEL: Record<Criticality, string> = {

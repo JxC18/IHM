@@ -132,7 +132,7 @@ export function RulesListPage() {
                     </td>
                     <td>
                       <div className="stack" style={{ gap: 2 }}>
-                        <StatusBadge status={r.status} />
+                        <StatusBadge status={r.status} lastRunAt={r.lastRunAt} />
                         {r.productionVersion && <span className="small muted">v{r.productionVersion} en production</span>}
                       </div>
                     </td>

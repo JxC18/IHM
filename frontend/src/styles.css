@@ -456,23 +456,18 @@ table.data tr:last-child td {
   background: var(--info-soft);
   color: var(--info);
 }
-.st-VALIDATED {
-  background: var(--surface);
-  color: var(--good);
-  border-color: var(--good);
-}
 .st-IN_PRODUCTION {
   background: var(--good-soft);
   color: var(--good);
 }
-.st-DISABLED {
+.st-INACTIVE {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.st-REPLACED {
   background: var(--muted-soft);
   color: var(--text-3);
   text-decoration: line-through;
-}
-.st-REJECTED {
-  background: var(--bad-soft);
-  color: var(--bad);
 }
 .crit {
   font-size: 12px;

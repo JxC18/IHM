@@ -13,7 +13,7 @@ from app.auth import get_current_user
 from app.bigquery import BigQueryGateway, get_bigquery
 from app.core import ApiError, Settings, get_settings
 from app.database import AuditEvent, Rule, User, get_db
-from app.rules import load_rule
+from app.rules import derive_status, load_rule, running_version, sync_runs
 from app.schemas import AuditEventOut, ConsolidatedRow, PerformanceResponse
 
 router = APIRouter(tags=["pilotage"])
@@ -52,7 +52,8 @@ def production(
     bq: BigQueryGateway = Depends(get_bigquery),
 ):
     rules = db.scalars(select(Rule).options(selectinload(Rule.versions))).all()
-    prod = {r.rule_id: (r, v) for r in rules for v in r.versions if v.status == "IN_PRODUCTION"}
+    # Règles orchestrées par Airflow, y compris celles devenues inactives (signalées à surveiller).
+    prod = {r.rule_id: (r, v) for r in rules if (v := running_version(r))}
     users = {u.matricule: u for u in db.scalars(select(User))}
     end = date.today()
     totals = {t.rule_id: t for t in bq.production_totals(list(prod), end - timedelta(days=29), end)}
@@ -68,6 +69,8 @@ def production(
                 fraud_typology=v.fraud_typology,
                 criticality=v.criticality,  # type: ignore[arg-type]
                 owner_name=owner.full_name if owner else r.owner_matricule,
+                status=derive_status(r, v),  # type: ignore[arg-type]
+                last_run_at=v.last_run_at,
                 ordersFlagged30d=t.flagged if t else 0,
                 ordersProcessed30d=t.processed if t else 0,
                 ordersConfirmed30d=t.confirmed if t else 0,
@@ -90,3 +93,12 @@ def list_audit(
     if matricule:
         q = q.where(AuditEvent.matricule == matricule)
     return db.scalars(q).all()
+
+
+@router.post("/internal/sync-runs", include_in_schema=False)
+def sync_airflow_runs(db: Session = Depends(get_db), bq: BigQueryGateway = Depends(get_bigquery)) -> dict:
+    """Déclenché par Cloud Scheduler : recopie l'état des exécutions Airflow (statuts déduits).
+
+    Sans identité utilisateur : la route est idempotente et ne fait que lire `rule_runs`.
+    """
+    return {"rulesUpdated": sync_runs(db, bq)}

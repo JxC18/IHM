@@ -6,7 +6,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-RuleStatus = Literal["DRAFT", "SUBMITTED", "VALIDATED", "IN_PRODUCTION", "DISABLED", "REJECTED"]
+# DRAFT et SUBMITTED : gestes de l'analyste. Les autres sont déduits des exécutions Airflow.
+RuleStatus = Literal["DRAFT", "SUBMITTED", "IN_PRODUCTION", "INACTIVE", "REPLACED"]
 Criticality = Literal["HIGH", "MEDIUM", "LOW"]
 Schedule = Literal["DAILY", "HOURLY", "WEEKLY"]
 
@@ -65,13 +66,14 @@ class RuleVersionOut(RuleInput):
     rule_id: str
     version: int
     status: RuleStatus
-    rejection_reason: str | None = None
     owner_matricule: str
     owner_name: str
     created_at: datetime
     updated_at: datetime
     submitted_at: datetime | None = None
     airflow_dag_id: str | None = None
+    first_run_at: datetime | None = None
+    last_run_at: datetime | None = None
 
 
 class RuleSummary(RuleVersionOut):
@@ -181,6 +183,8 @@ class ConsolidatedRow(Model):
     fraud_typology: str
     criticality: Criticality
     owner_name: str
+    status: RuleStatus
+    last_run_at: datetime | None = None
     orders_flagged30d: int = Field(alias="ordersFlagged30d")
     orders_processed30d: int = Field(alias="ordersProcessed30d")
     orders_confirmed30d: int = Field(alias="ordersConfirmed30d")

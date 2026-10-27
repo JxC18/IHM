@@ -54,7 +54,10 @@ export interface Api {
 
   /** Présent uniquement en mode démo : simule les actions de l'équipe data en base. */
   demo?: {
-    setStatus(ruleId: string, status: 'VALIDATED' | 'IN_PRODUCTION' | 'DISABLED' | 'REJECTED', reason?: string): Promise<RuleDetail>;
+    /** Simule les runs Airflow de la dernière version soumise (premier run aujourd'hui). */
+    simulateRuns(ruleId: string): Promise<RuleDetail>;
+    /** Simule l'arrêt du DAG : dernier run juste au-delà du seuil d'inactivité. */
+    simulateStop(ruleId: string): Promise<RuleDetail>;
     reset(): Promise<void>;
   };
 }

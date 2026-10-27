@@ -5,10 +5,9 @@
 export const RULE_STATUSES = [
   'DRAFT',
   'SUBMITTED',
-  'VALIDATED',
   'IN_PRODUCTION',
-  'DISABLED',
-  'REJECTED',
+  'INACTIVE',
+  'REPLACED',
 ] as const;
 export type RuleStatus = (typeof RULE_STATUSES)[number];
 
@@ -38,13 +37,15 @@ export interface RuleVersion extends RuleInput {
   ruleId: string;
   version: number;
   status: RuleStatus;
-  rejectionReason?: string;
   ownerMatricule: string;
   ownerName: string;
   createdAt: string;
   updatedAt: string;
   submittedAt?: string;
+  /** DAG, premier et dernier run : lus dans rule_runs (écrite par Airflow). */
   airflowDagId?: string;
+  firstRunAt?: string;
+  lastRunAt?: string;
 }
 
 /** Ligne de la liste des règles : version courante (= la plus récente). */
@@ -169,6 +170,8 @@ export interface ConsolidatedRow {
   fraudTypology: string;
   criticality: Criticality;
   ownerName: string;
+  status: RuleStatus;
+  lastRunAt?: string;
   ordersFlagged30d: number;
   ordersProcessed30d: number;
   ordersConfirmed30d: number;
@@ -183,8 +186,7 @@ export type AuditAction =
   | 'RULE_UPDATE'
   | 'RULE_NEW_VERSION'
   | 'RULE_TEST'
-  | 'RULE_SUBMIT'
-  | 'RULE_STATUS_CHANGE';
+  | 'RULE_SUBMIT';
 
 export interface AuditEvent {
   id: string;

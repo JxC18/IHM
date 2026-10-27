@@ -63,20 +63,20 @@ export function OverviewPage() {
           <button type="button" className="card kpi kpi-link" onClick={() => openList({ status: 'IN_PRODUCTION' })}>
             <span className="kpi-label">En production</span>
             <span className="kpi-value">{fmtInt(count('IN_PRODUCTION'))}</span>
-            <span className="kpi-sub">Règles exécutées par Airflow</span>
+            <span className="kpi-sub">
+              Règles exécutées par Airflow
+              {count('INACTIVE') > 0 && ` · ${count('INACTIVE')} inactive${count('INACTIVE') > 1 ? 's' : ''} en plus`}
+            </span>
           </button>
           <button type="button" className="card kpi kpi-link" onClick={() => openList({ status: 'SUBMITTED' })}>
-            <span className="kpi-label">Chez l'équipe data</span>
-            <span className="kpi-value">{fmtInt(count('SUBMITTED') + count('VALIDATED'))}</span>
-            <span className="kpi-sub">
-              {count('SUBMITTED')} soumise{count('SUBMITTED') > 1 ? 's' : ''} · {count('VALIDATED')} validée{count('VALIDATED') > 1 ? 's' : ''},
-              en attente d'industrialisation
-            </span>
+            <span className="kpi-label">Soumises</span>
+            <span className="kpi-value">{fmtInt(count('SUBMITTED'))}</span>
+            <span className="kpi-sub">En attente de mise en production par l'équipe data</span>
           </button>
           <Link to="/production" className="card kpi kpi-link">
             <span className="kpi-label">À surveiller</span>
             <span className="kpi-value">{prod.data ? fmtInt(watch.length) : '…'}</span>
-            <span className="kpi-sub">Précision sous {fmtPct(threshold)} ou aucune remontée sur 30 jours</span>
+            <span className="kpi-sub">Précision sous {fmtPct(threshold)}, aucune remontée sur 30 jours ou plus exécutée par Airflow</span>
             {watch.length > 0 && <span className="kpi-flag">⚠ Action requise</span>}
           </Link>
           <button type="button" className="card kpi kpi-link" onClick={() => openList({ status: 'DRAFT', owner: user?.matricule ?? '' })}>

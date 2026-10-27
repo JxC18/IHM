@@ -11,7 +11,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from functools import lru_cache
 from typing import Any, Protocol
 
@@ -54,6 +54,17 @@ class ExecMeta:
 
 
 @dataclass
+class RunStats:
+    """Synthèse des exécutions Airflow d'une version de règle (table `rule_runs`)."""
+
+    rule_id: str
+    rule_version: int
+    first_run_at: datetime
+    last_run_at: datetime
+    dag_id: str | None
+
+
+@dataclass
 class ProductionTotals:
     rule_id: str
     flagged: int
@@ -72,8 +83,10 @@ class BigQueryGateway(Protocol):
 
     def production_totals(self, rule_ids: list[str], start: date, end: date) -> list[ProductionTotals]: ...
 
-    def publish_rule(self, v: RuleVersion, owner_matricule: str) -> None:
-        """Écrit la version dans `rules_registry` (création ou mise à jour)."""
+    def run_stats(self) -> list[RunStats]: ...
+
+    def publish_rule(self, v: RuleVersion, owner_matricule: str, status: str) -> None:
+        """Écrit la version dans `rules_registry` (création ou mise à jour), avec son statut affiché."""
         ...
 
 
@@ -209,7 +222,17 @@ class BigQueryRegistry:
         self.client = bigquery.Client(project=s.gcp_project or None, location=s.bq_location)
         self.table = f"`{self.client.project}.{s.bq_dataset}.rules_registry`"
 
-    def publish_rule(self, v: RuleVersion, owner_matricule: str) -> None:
+    def run_stats(self):
+        rows = self._rows(
+            f"""SELECT rule_id, rule_version, MIN(started_at) AS first_run_at, MAX(started_at) AS last_run_at,
+                       ARRAY_AGG(airflow_dag_id ORDER BY started_at DESC LIMIT 1)[OFFSET(0)] AS dag_id
+                FROM {self.ds}.rule_runs
+                GROUP BY rule_id, rule_version""",
+            [],
+        )
+        return [RunStats(**r) for r in rows]
+
+    def publish_rule(self, v: RuleVersion, owner_matricule: str, status: str) -> None:
         P = self._bq.ScalarQueryParameter
         params = [
             P("rule_id", "STRING", v.rule_id),
@@ -220,7 +243,7 @@ class BigQueryRegistry:
             P("criticality", "STRING", v.criticality),
             P("schedule", "STRING", v.schedule),
             P("sql_query", "STRING", v.sql_query),
-            P("status", "STRING", v.status),
+            P("status", "STRING", status),
             P("owner_matricule", "STRING", owner_matricule),
             P("created_at", "TIMESTAMP", v.created_at),
             P("updated_at", "TIMESTAMP", v.updated_at),
@@ -265,6 +288,7 @@ class FakeBigQueryGateway:
     next_error: QueryError | None = None
     performance: dict[str, list[DailyPerformance]] = field(default_factory=dict)
     published: list[tuple[str, int, str]] = field(default_factory=list)
+    stats: list[RunStats] = field(default_factory=list)
 
     def dry_run(self, sql, run_date):
         if self.next_error:
@@ -309,9 +333,12 @@ class FakeBigQueryGateway:
             )
         return out
 
-    def publish_rule(self, v, owner_matricule):
-        log.info("rules_registry ← %s v%s (%s)", v.rule_id, v.version, v.status)
-        self.published.append((v.rule_id, v.version, v.status))
+    def run_stats(self):
+        return list(self.stats)
+
+    def publish_rule(self, v, owner_matricule, status):
+        log.info("rules_registry ← %s v%s (%s)", v.rule_id, v.version, status)
+        self.published.append((v.rule_id, v.version, status))
 
 
 @lru_cache

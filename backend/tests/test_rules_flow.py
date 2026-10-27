@@ -1,4 +1,6 @@
-from app.bigquery import DryRunMeta, QueryError
+from datetime import UTC, datetime, timedelta
+
+from app.bigquery import DryRunMeta, QueryError, RunStats
 from app.schemas import Column
 from tests.conftest import login
 
@@ -121,3 +123,57 @@ def test_filtres_et_recherche(client):
     assert [r["name"] for r in client.get("/rules", params={"criticality": "LOW"}).json()] == ["Autre"]
     assert [r["name"] for r in client.get("/rules", params={"q": "RELAIS"}).json()] == ["Autre"]
     assert client.get("/rules", params={"status": "SUBMITTED"}).json() == []
+
+
+def _submit(client, rule=RULE):
+    rid = client.post("/rules", json=rule).json()["ruleId"]
+    client.post("/query/execute", json={"sql": rule["sqlQuery"], "ruleId": rid})
+    assert client.post(f"/rules/{rid}/submit").status_code == 200
+    return rid
+
+
+def test_statuts_deduits_des_runs_airflow(client, bq):
+    login(client)
+    rid = _submit(client)
+    status = lambda: client.get(f"/rules/{rid}").json()["status"]  # noqa: E731
+    assert status() == "SUBMITTED"
+
+    # Airflow exécute la v1 : la plateforme la constate en production.
+    now = datetime.now(UTC)
+    bq.stats = [RunStats(rid, 1, now - timedelta(days=10), now - timedelta(hours=2), "fraud_rule_v1")]
+    assert client.post("/internal/sync-runs").json() == {"rulesUpdated": 1}
+    detail = client.get(f"/rules/{rid}").json()
+    assert detail["status"] == "IN_PRODUCTION" and detail["airflowDagId"] == "fraud_rule_v1"
+    assert [r["ruleId"] for r in client.get("/performance/production").json()] == [rid]
+
+    # Plus de run depuis 4 jours pour une règle quotidienne : inactive.
+    bq.stats = [RunStats(rid, 1, now - timedelta(days=10), now - timedelta(days=4), "fraud_rule_v1")]
+    client.post("/internal/sync-runs")
+    assert status() == "INACTIVE"
+    # Rien de nouveau dans rule_runs : rien à republier.
+    assert client.post("/internal/sync-runs").json() == {"rulesUpdated": 0}
+    assert client.get("/performance/production").json()[0]["status"] == "INACTIVE"
+
+    # Une v2 est soumise : la v1 tourne encore, elle reste visible comme version en production.
+    client.put(f"/rules/{rid}", json={**RULE, "sqlQuery": SQL + "\n  AND o.item_count > 1"})
+    client.post("/query/execute", json={"sql": SQL + "\n  AND o.item_count > 1", "ruleId": rid})
+    client.post(f"/rules/{rid}/submit")
+    d = client.get(f"/rules/{rid}").json()
+    assert (d["status"], d["productionVersion"]) == ("SUBMITTED", 1)
+
+    # La v2 démarre : la v1 est remplacée.
+    bq.stats.append(RunStats(rid, 2, now, now, "fraud_rule_v2"))
+    client.post("/internal/sync-runs")
+    d = client.get(f"/rules/{rid}").json()
+    assert [v["status"] for v in d["versions"]] == ["IN_PRODUCTION", "REPLACED"]
+    assert bq.published[-2:] == [(rid, 1, "REPLACED"), (rid, 2, "IN_PRODUCTION")]
+
+
+def test_version_soumise_remplacee_par_une_nouvelle_soumission(client):
+    login(client)
+    rid = _submit(client)
+    sql2 = SQL + "\n  AND o.item_count > 1"
+    client.put(f"/rules/{rid}", json={**RULE, "sqlQuery": sql2})
+    client.post("/query/execute", json={"sql": sql2, "ruleId": rid})
+    client.post(f"/rules/{rid}/submit")
+    assert [v["status"] for v in client.get(f"/rules/{rid}").json()["versions"]] == ["SUBMITTED", "REPLACED"]

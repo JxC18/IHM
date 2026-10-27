@@ -6,7 +6,7 @@ import re
 import unicodedata
 import urllib.request
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
@@ -56,6 +56,36 @@ def _test_out(t: TestRun, users: dict[str, User]) -> TestRecord:
     return TestRecord(**fields, by_name=u.full_name if u else t.by_matricule)
 
 
+# Une version est « inactive » après 3 périodes sans exécution (3 jours pour une règle quotidienne…).
+INACTIVE_AFTER_PERIODS = 3
+SCHEDULE_PERIOD = {"HOURLY": timedelta(hours=1), "DAILY": timedelta(days=1), "WEEKLY": timedelta(weeks=1)}
+
+
+def derive_status(rule: Rule, v: RuleVersion, at: datetime | None = None) -> str:
+    """Statut affiché d'une version.
+
+    L'équipe data n'agit pas sur la plateforme : la mise en production se constate dans les
+    exécutions Airflow (`rule_runs`), recopiées dans first_run_at / last_run_at.
+    """
+    if v.status == "DRAFT":
+        return "DRAFT"
+    newer = [w for w in rule.versions if w.version > v.version]
+    if any(w.first_run_at for w in newer):
+        return "REPLACED"  # une version plus récente tourne à sa place
+    if v.first_run_at and v.last_run_at:
+        idle = (at or now()) - as_utc(v.last_run_at)
+        limit = SCHEDULE_PERIOD.get(v.schedule, timedelta(days=1)) * INACTIVE_AFTER_PERIODS
+        return "INACTIVE" if idle > limit else "IN_PRODUCTION"
+    if any(w.status == "SUBMITTED" for w in newer):
+        return "REPLACED"  # une version plus récente a été soumise avant que celle-ci ne tourne
+    return "SUBMITTED"
+
+
+def running_version(rule: Rule) -> RuleVersion | None:
+    """Version orchestrée par Airflow (en production ou inactive), s'il y en a une."""
+    return next((v for v in rule.versions if derive_status(rule, v) in ("IN_PRODUCTION", "INACTIVE")), None)
+
+
 def _version_out(v: RuleVersion, rule: Rule, users: dict[str, User]) -> RuleVersionOut:
     owner = users.get(rule.owner_matricule)
     return RuleVersionOut(
@@ -67,14 +97,15 @@ def _version_out(v: RuleVersion, rule: Rule, users: dict[str, User]) -> RuleVers
         criticality=v.criticality,  # type: ignore[arg-type]
         schedule=v.schedule,  # type: ignore[arg-type]
         sql_query=v.sql_query,
-        status=v.status,  # type: ignore[arg-type]
-        rejection_reason=v.rejection_reason,
+        status=derive_status(rule, v),  # type: ignore[arg-type]
         owner_matricule=rule.owner_matricule,
         owner_name=owner.full_name if owner else rule.owner_matricule,
         created_at=v.created_at,
         updated_at=v.updated_at,
         submitted_at=v.submitted_at,
         airflow_dag_id=v.airflow_dag_id,
+        first_run_at=v.first_run_at,
+        last_run_at=v.last_run_at,
     )
 
 
@@ -90,7 +121,7 @@ def _last_test(db: Session, rule_id: str, version: int) -> TestRun | None:
 def summary(db: Session, rule: Rule, users: dict[str, User] | None = None) -> RuleSummary:
     users = users if users is not None else _users(db)
     cur = rule.versions[-1]
-    prod = next((v for v in rule.versions if v.status == "IN_PRODUCTION"), None)
+    prod = running_version(rule)
     last = _last_test(db, rule.rule_id, cur.version)
     return RuleSummary(
         **_version_out(cur, rule, users).model_dump(),
@@ -182,6 +213,37 @@ def _commit_name(db: Session, name: str) -> None:
         raise ApiError(409, f"Une règle nommée « {name.strip()} » existe déjà.", "NAME_TAKEN") from e
 
 
+def _publish(bq: BigQueryGateway, rule: Rule, *versions: RuleVersion) -> None:
+    for v in versions:
+        bq.publish_rule(v, rule.owner_matricule, derive_status(rule, v))
+
+
+def sync_runs(db: Session, bq: BigQueryGateway) -> int:
+    """Recopie depuis `rule_runs` les dates de premier / dernier run et le DAG de chaque version.
+
+    Appelée périodiquement (Cloud Scheduler). Renvoie le nombre de règles mises à jour.
+    """
+    stats = {(s.rule_id, s.rule_version): s for s in bq.run_stats()}
+    touched: dict[str, Rule] = {}
+    for v in db.scalars(select(RuleVersion)):
+        s = stats.get((v.rule_id, v.version))
+        if not s:
+            continue
+        known = (
+            v.first_run_at and as_utc(v.first_run_at),
+            v.last_run_at and as_utc(v.last_run_at),
+            v.airflow_dag_id,
+        )
+        if known != (as_utc(s.first_run_at), as_utc(s.last_run_at), s.dag_id):
+            v.first_run_at, v.last_run_at, v.airflow_dag_id = s.first_run_at, s.last_run_at, s.dag_id
+            touched[v.rule_id] = v.rule
+    db.commit()
+    # Une version qui démarre peut en remplacer une autre : on republie toute la règle.
+    for rule in touched.values():
+        _publish(bq, rule, *rule.versions)
+    return len(touched)
+
+
 def notify_submission(v: RuleVersion, by: str) -> None:
     payload = {"event": "RULE_SUBMITTED", "ruleId": v.rule_id, "version": v.version, "name": v.name, "by": by}
     url = get_settings().notify_webhook_url
@@ -219,11 +281,14 @@ def list_rules(
         cur = r.versions[-1]
         if needle and needle not in name_key(f"{cur.name}\n{cur.description}\n{cur.sql_query}"):
             continue
-        if (status and cur.status != status) or (typology and cur.fraud_typology != typology):
+        if typology and cur.fraud_typology != typology:
             continue
         if (owner and r.owner_matricule != owner) or (criticality and cur.criticality != criticality):
             continue
-        out.append(summary(db, r, users))
+        s = summary(db, r, users)
+        if status and s.status != status:
+            continue
+        out.append(s)
     out.sort(key=lambda s: s.updated_at, reverse=sort != "updated_asc")
     return out
 
@@ -261,7 +326,7 @@ def create_rule(
     _adopt_tests(db, user, v, None, None)
     record_audit(db, user, "RULE_CREATE", v)
     _commit_name(db, data.name)
-    bq.publish_rule(v, rule.owner_matricule)
+    _publish(bq, rule, v)
     return detail(db, rule)
 
 
@@ -300,7 +365,7 @@ def update_rule(
             f"Nouvelle version créée à partir de la v{cur.version} ({cur.status})",
         )
     _commit_name(db, data.name)
-    bq.publish_rule(target, rule.owner_matricule)
+    _publish(bq, rule, target)
     return detail(db, rule)
 
 
@@ -327,6 +392,7 @@ def submit_rule(
     cur.submitted_at = cur.updated_at = now()
     record_audit(db, user, "RULE_SUBMIT", cur, "Notification envoyée à l'équipe data")
     db.commit()
-    bq.publish_rule(cur, rule.owner_matricule)
+    # Les versions précédentes peuvent passer « Remplacée » : on les republie aussi.
+    _publish(bq, rule, *rule.versions)
     notify_submission(cur, user.matricule)
     return detail(db, rule)

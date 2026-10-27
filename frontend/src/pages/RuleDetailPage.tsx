@@ -5,7 +5,7 @@ import type { RuleDetail, RuleVersion } from '../api/types';
 import { SqlEditor } from '../components/SqlEditor';
 import { DiffView } from '../components/DiffView';
 import { PerformanceDashboard } from '../components/PerformanceDashboard';
-import { Alert, CriticalityBadge, Lifecycle, Spinner, StatusBadge } from '../components/ui';
+import { Alert, CriticalityBadge, idleFor, Lifecycle, Spinner, StatusBadge } from '../components/ui';
 import { AuditTable } from './AuditPage';
 import { SCHEDULE_LABEL, STATUS_LABEL, fmtBytes, fmtDateTime, fmtDuration, fmtEur, fmtInt } from '../lib/format';
 import { queryHash } from '../lib/sql';
@@ -37,7 +37,7 @@ export function RuleDetailPage() {
   const last = r.lastTest;
   const testOk = !!last && last.success && last.phase === 'EXECUTION' && last.queryHash === hash;
   const canSubmit = r.status === 'DRAFT' && testOk;
-  const everInProduction = r.versions.some((v) => !!v.airflowDagId);
+  const everInProduction = r.versions.some((v) => !!v.firstRunAt);
 
   async function submit() {
     setBusy(true);
@@ -70,7 +70,7 @@ export function RuleDetailPage() {
           <div className="row" style={{ gap: 10 }}>
             <h1>{r.name}</h1>
             <span className="tag">v{r.version}</span>
-            <StatusBadge status={r.status} />
+            <StatusBadge status={r.status} lastRunAt={r.lastRunAt} />
           </div>
           <p className="row small" style={{ gap: 14 }}>
             <span>{r.fraudTypology}</span>
@@ -107,14 +107,15 @@ export function RuleDetailPage() {
           </Alert>
         )}
         {actionError && <Alert kind="error" title={actionError} />}
-        {r.status === 'REJECTED' && (
-          <Alert kind="error" title="Règle refusée par l'équipe data">
-            {r.rejectionReason ?? 'Motif non renseigné.'} Créez une nouvelle version pour la corriger.
+        {r.status === 'INACTIVE' && r.lastRunAt && (
+          <Alert kind="warn" title={`Plus exécutée par Airflow depuis ${idleFor(r.lastRunAt)}`}>
+            Dernier run le {fmtDateTime(r.lastRunAt)}. Le DAG a été arrêté ou est en panne : vérifiez auprès de l'équipe data. Le statut
+            redeviendra « En production » dès que les runs reprendront.
           </Alert>
         )}
         {r.productionVersion && (
           <Alert kind="info" title={`La v${r.productionVersion} tourne en production.`}>
-            La v{r.version} ({STATUS_LABEL[r.status].toLowerCase()}) la remplacera une fois mise en production par l'équipe data.
+            La v{r.version} ({STATUS_LABEL[r.status].toLowerCase()}) la remplacera dès qu'Airflow l'exécutera.
           </Alert>
         )}
         {r.status === 'DRAFT' && !testOk && (
@@ -157,7 +158,7 @@ function DefinitionTab({ r }: { r: RuleDetail }) {
   return (
     <div className="stack">
       <div className="card card-pad stack" style={{ gap: 12 }}>
-        <Lifecycle status={r.status} />
+        <Lifecycle status={r.status} lastRunAt={r.lastRunAt} />
         <p style={{ margin: 0 }}>{r.description}</p>
         <dl className="kv">
           <dt>Identifiant</dt>
@@ -171,7 +172,15 @@ function DefinitionTab({ r }: { r: RuleDetail }) {
             </>
           )}
           <dt>DAG Airflow</dt>
-          <dd className="mono small">{r.airflowDagId ?? <span className="muted">— renseigné par l'équipe data</span>}</dd>
+          <dd className="mono small">{r.airflowDagId ?? <span className="muted">— pas encore exécutée par Airflow</span>}</dd>
+          {r.firstRunAt && (
+            <>
+              <dt>Premier run</dt>
+              <dd>{fmtDateTime(r.firstRunAt)}</dd>
+              <dt>Dernier run</dt>
+              <dd>{r.lastRunAt ? fmtDateTime(r.lastRunAt) : '—'}</dd>
+            </>
+          )}
         </dl>
       </div>
       <section className="card">
@@ -271,7 +280,7 @@ function VersionsTab({ r }: { r: RuleDetail }) {
                     {v.version === r.version && <span className="small muted"> (courante)</span>}
                   </td>
                   <td>
-                    <StatusBadge status={v.status} />
+                    <StatusBadge status={v.status} lastRunAt={v.lastRunAt} />
                   </td>
                   <td className="small">{fmtDateTime(v.createdAt)}</td>
                   <td className="small">{v.submittedAt ? fmtDateTime(v.submittedAt) : '—'}</td>
@@ -349,13 +358,13 @@ function RuleAudit({ ruleId }: { ruleId: string }) {
 
 /** Mode démo uniquement : simule les écritures que l'équipe data fait en base. */
 function DemoPanel({ r, onChange }: { r: RuleDetail; onChange: (d: RuleDetail) => void }) {
-  const [reason, setReason] = useState('');
   const [err, setErr] = useState<string>();
-  const prod = r.versions.find((v) => v.status === 'IN_PRODUCTION');
-  const act = async (s: 'VALIDATED' | 'IN_PRODUCTION' | 'DISABLED' | 'REJECTED') => {
+  const waiting = r.versions.some((v) => v.status === 'SUBMITTED');
+  const running = r.versions.find((v) => v.status === 'IN_PRODUCTION');
+  const act = async (fn: (id: string) => Promise<RuleDetail>) => {
     setErr(undefined);
     try {
-      onChange(await api.demo!.setStatus(r.ruleId, s, s === 'REJECTED' ? reason : undefined));
+      onChange(await fn(r.ruleId));
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -363,34 +372,24 @@ function DemoPanel({ r, onChange }: { r: RuleDetail; onChange: (d: RuleDetail) =
   return (
     <div className="demo-panel stack" style={{ marginTop: 24, gap: 8 }}>
       <div>
-        <strong>Simulation équipe data</strong>{' '}
+        <strong>Simulation Airflow</strong>{' '}
         <span className="small muted">
-          — mode démo uniquement. En V1, ces changements de statut sont faits par l'équipe data directement en base (pas d'interface).
+          — mode démo uniquement. En réel, la plateforme lit les exécutions dans <span className="mono">rule_runs</span> : une version
+          qui tourne passe « En production », une version qui ne tourne plus depuis 3 périodes passe « Inactive ».
         </span>
       </div>
       <div className="row">
-        {r.status === 'SUBMITTED' && (
-          <>
-            <button type="button" className="btn btn-sm" onClick={() => act('VALIDATED')}>
-              Valider
-            </button>
-            <input type="text" aria-label="Motif de refus" placeholder="Motif de refus" value={reason} onChange={(e) => setReason(e.target.value)} style={{ maxWidth: 280, minHeight: 28 }} />
-            <button type="button" className="btn btn-sm btn-danger" onClick={() => act('REJECTED')}>
-              Refuser
-            </button>
-          </>
-        )}
-        {r.status === 'VALIDATED' && (
-          <button type="button" className="btn btn-sm" onClick={() => act('IN_PRODUCTION')}>
-            Mettre en production
+        {waiting && (
+          <button type="button" className="btn btn-sm" onClick={() => act(api.demo!.simulateRuns)}>
+            Simuler les premiers runs Airflow
           </button>
         )}
-        {prod && (
-          <button type="button" className="btn btn-sm btn-danger" onClick={() => act('DISABLED')}>
-            Désactiver la v{prod.version}
+        {running && (
+          <button type="button" className="btn btn-sm btn-danger" onClick={() => act(api.demo!.simulateStop)}>
+            Simuler l'arrêt du DAG
           </button>
         )}
-        {!['SUBMITTED', 'VALIDATED'].includes(r.status) && !prod && <span className="small muted">Aucune action équipe data possible dans ce statut.</span>}
+        {!waiting && !running && <span className="small muted">Aucune simulation possible dans cet état.</span>}
       </div>
       {err && <span className="error-text">{err}</span>}
     </div>

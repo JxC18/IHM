@@ -1,5 +1,5 @@
 import type { ConsolidatedRow, DailyPerformance } from '../api/types';
-import { fmtPct } from './format';
+import { fmtDate, fmtPct } from './format';
 
 /** Seuils de fiabilité du taux de précision (PRD F6, point d'attention). */
 export const MIN_PROCESSING_RATE = 0.5;
@@ -56,6 +56,8 @@ export function productionHealth(r: ConsolidatedRow, threshold: number): Product
   const lowSample =
     processingRate === null || processingRate < MIN_PROCESSING_RATE || r.ordersProcessed30d < MIN_PROCESSED_ORDERS;
   const reasons: string[] = [];
+  if (r.status === 'INACTIVE')
+    reasons.push(`Plus exécutée par Airflow${r.lastRunAt ? ` depuis le ${fmtDate(r.lastRunAt)}` : ''} — DAG arrêté ou en panne`);
   if (r.ordersFlagged30d === 0) reasons.push('Aucune remontée sur 30 jours — règle probablement cassée');
   if (precision !== null && precision < threshold) reasons.push(`Précision sous le seuil de ${fmtPct(threshold)}`);
   return { ...r, processingRate, precision, lowSample, reasons };

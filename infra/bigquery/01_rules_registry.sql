@@ -11,11 +11,10 @@ CREATE TABLE IF NOT EXISTS `${PROJECT}.${DATASET}.rules_registry` (
   criticality      STRING    NOT NULL,   -- HIGH | MEDIUM | LOW
   schedule         STRING    NOT NULL,   -- DAILY | HOURLY | WEEKLY
   sql_query        STRING    NOT NULL,
-  status           STRING    NOT NULL,   -- DRAFT | SUBMITTED | VALIDATED | IN_PRODUCTION | DISABLED | REJECTED
-  rejection_reason STRING,
+  status           STRING    NOT NULL,   -- DRAFT | SUBMITTED | IN_PRODUCTION | INACTIVE | REPLACED
+                                         -- (les trois derniers sont déduits des exécutions dans rule_runs)
   owner_matricule  STRING    NOT NULL,
   created_at       TIMESTAMP NOT NULL,
-  updated_at       TIMESTAMP NOT NULL,
-  airflow_dag_id   STRING                -- renseigné par l'équipe data
+  updated_at       TIMESTAMP NOT NULL
 )
 PARTITION BY DATE(created_at);

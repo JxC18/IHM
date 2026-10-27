@@ -103,12 +103,16 @@ class RuleVersion(Base):
     criticality: Mapped[str] = mapped_column(String(10))
     schedule: Mapped[str] = mapped_column(String(10))
     sql_query: Mapped[str] = mapped_column(Text)
+    # Seuls les gestes de l'analyste sont stockés (DRAFT, SUBMITTED). En production, inactive et
+    # remplacée se déduisent des exécutions Airflow (colonnes *_run_at), voir rules.derive_status.
     status: Mapped[str] = mapped_column(String(20), index=True)
-    rejection_reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Recopiés depuis BigQuery `rule_runs` par la synchronisation (rules.sync_runs).
     airflow_dag_id: Mapped[str | None] = mapped_column(String(200))
+    first_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     rule: Mapped[Rule] = relationship(back_populates="versions")
 

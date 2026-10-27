@@ -204,9 +204,16 @@ navigateur ──► front (Nginx, Cloud Run) ──/api──► API FastAPI (C
 - **Q1, base applicative** : PostgreSQL (recommandation du PRD §8.3). L'exposition à l'équipe data se fait par
   `rules_registry` dans BigQuery, alimentée à l'écriture (`publish_rule` dans `backend/app/bigquery.py`, mode `real`). Si vous choisissez
   une vue fédérée `EXTERNAL_QUERY`, cette synchronisation devient inutile.
-- **Statuts posés par l'équipe data** (VALIDATED, IN_PRODUCTION…) : le PRD prévoit une écriture directe en base.
-  Avec PostgreSQL comme source de vérité, l'équipe data doit écrire dans `rule_versions` (pas dans BigQuery),
-  ou un back-office minimal est nécessaire (R3). À trancher avec elle.
+- **Cycle de vie (écart au PRD F5 et §4.2)** : l'équipe data n'agit pas sur la plateforme. Seuls les gestes de
+  l'analyste sont stockés (Brouillon, Soumise) ; le reste se **déduit des exécutions Airflow** dans `rule_runs` :
+  - *En production* : la version tourne (Airflow écrit `airflow_dag_id` dans `rule_runs`) ;
+  - *Inactive depuis X* : plus de run depuis 3 périodes (3 h, 3 jours ou 3 semaines selon la fréquence) ;
+    le statut redevient « En production » dès que les runs reprennent ;
+  - *Remplacée* : une version plus récente a été soumise ou tourne à sa place.
+
+  Les statuts « Validée » et « Refusée » disparaissent : un refus passe hors plateforme et l'analyste soumet
+  une nouvelle version (risque R3 : le motif n'est pas tracé). L'état des runs est recopié par
+  `POST /internal/sync-runs`, à appeler périodiquement (Cloud Scheduler, toutes les heures par exemple).
 - **Contraintes SQL « avant enregistrement »** : seul le DML/DDL bloque l'enregistrement d'un brouillon ;
   `order_id`, `@run_date` et les dates en dur bloquent la soumission.
 - **Paramètres (écart au PRD F2)** : pas de paramètres déclarés. Les seuils s'écrivent en dur dans le SQL

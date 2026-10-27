@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
-import { Alert, CriticalityBadge, Spinner } from '../components/ui';
+import { Alert, CriticalityBadge, Spinner, StatusBadge } from '../components/ui';
 import { fmtInt, fmtPct } from '../lib/format';
 import { DEFAULT_WATCH_THRESHOLD, productionHealth, type ProductionHealth } from '../lib/metrics';
 import { useAsync } from '../lib/useAsync';
@@ -46,7 +46,7 @@ export function ProductionPage() {
       <div className="page-head">
         <div>
           <h1>Règles en production</h1>
-          <p>Toutes les règles en production, sur les 30 derniers jours.</p>
+          <p>Toutes les règles exécutées par Airflow, y compris celles devenues inactives, sur les 30 derniers jours.</p>
         </div>
       </div>
       <div className="stack">
@@ -100,9 +100,12 @@ export function ProductionPage() {
                   {sorted.map((r) => (
                     <tr key={r.ruleId}>
                       <td>
-                        <Link to={`/rules/${r.ruleId}`} className="rule-link">
-                          {r.name}
-                        </Link>
+                        <div className="row" style={{ gap: 8 }}>
+                          <Link to={`/rules/${r.ruleId}`} className="rule-link">
+                            {r.name}
+                          </Link>
+                          {r.status === 'INACTIVE' && <StatusBadge status="INACTIVE" lastRunAt={r.lastRunAt} />}
+                        </div>
                         <div className="small muted">
                           v{r.version} · {r.fraudTypology} · {r.ownerName}
                         </div>

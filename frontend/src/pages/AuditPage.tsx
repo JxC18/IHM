@@ -14,7 +14,6 @@ export const ACTION_LABEL: Record<AuditAction, string> = {
   RULE_NEW_VERSION: 'Nouvelle version',
   RULE_TEST: 'Test',
   RULE_SUBMIT: 'Soumission',
-  RULE_STATUS_CHANGE: 'Changement de statut',
 };
 
 export function AuditTable({ events, showRule = true }: { events: AuditEvent[]; showRule?: boolean }) {
@@ -92,7 +91,6 @@ export function AuditPage() {
                   {u.firstName} {u.lastName} ({u.matricule})
                 </option>
               ))}
-              <option value="000000">Équipe data (base)</option>
             </select>
             <label htmlFor="au-action" className="small muted">
               Action

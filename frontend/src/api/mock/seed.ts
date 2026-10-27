@@ -4,7 +4,10 @@ import { queryHash } from '../../lib/sql';
 export interface MockRule {
   ruleId: string;
   versions: RuleVersion[];
-  /** Date de mise en production de chaque version (pour générer les indicateurs). */
+  /**
+   * Exécutions Airflow simulées (table rule_runs) : date du premier run de chaque version, et date
+   * du dernier run quand le DAG s'est arrêté. C'est d'ici que se déduisent les statuts.
+   */
   productionSince: Record<number, string>;
   productionUntil: Record<number, string>;
   /** Comportement simulé des indicateurs. */
@@ -21,7 +24,7 @@ export interface MockDb {
   usage: Record<string, Record<string, number>>;
 }
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 const daysAgo = (n: number, h = 10) => {
   const d = new Date();
@@ -211,6 +214,9 @@ WHERE o.order_date BETWEEN DATE_SUB(@run_date, INTERVAL 30 DAY) AND @run_date
 QUALIFY nb_comptes > 4`,
 };
 
+// v2 réécrite sur une fenêtre de 7 jours après un retour de l'équipe data (hors plateforme).
+const R7_V2_SQL = R7.sql.replace('INTERVAL 30 DAY', 'INTERVAL 7 DAY');
+
 const R8: Def = {
   id: '7f3c2a10-5b1e-4c8a-9d21-0a1b2c3d4e08',
   owner: '118870',
@@ -246,19 +252,17 @@ function passedTest(r: RuleVersion, at: number, by: string, i: number): TestReco
 }
 
 export function buildSeed(): MockDb {
-  const r1v1 = v({ ...R1, sql: R1_V1_SQL }, 1, 'DISABLED', 160, { airflowDagId: 'fraud_rule_compte_recent_v1' });
-  const r1v2 = v(R1, 2, 'IN_PRODUCTION', 75, { submittedAt: daysAgo(74), airflowDagId: 'fraud_rule_compte_recent_v2' });
-  const r2v1 = v(R2, 1, 'IN_PRODUCTION', 120, { submittedAt: daysAgo(119), airflowDagId: 'fraud_rule_livraison_pays' });
-  const r3v1 = v(R3, 1, 'IN_PRODUCTION', 95, { submittedAt: daysAgo(94), airflowDagId: 'fraud_rule_tentatives_paiement' });
+  // Seuls les gestes de l'analyste sont stockés (DRAFT / SUBMITTED) ; le reste se déduit des runs.
+  const r1v1 = v({ ...R1, sql: R1_V1_SQL }, 1, 'SUBMITTED', 160, { submittedAt: daysAgo(159), airflowDagId: 'fraud_rule_compte_recent_v1' });
+  const r1v2 = v(R1, 2, 'SUBMITTED', 75, { submittedAt: daysAgo(74), airflowDagId: 'fraud_rule_compte_recent_v2' });
+  const r2v1 = v(R2, 1, 'SUBMITTED', 120, { submittedAt: daysAgo(119), airflowDagId: 'fraud_rule_livraison_pays' });
+  const r3v1 = v(R3, 1, 'SUBMITTED', 95, { submittedAt: daysAgo(94), airflowDagId: 'fraud_rule_tentatives_paiement' });
   const r3v2 = v({ ...R3, sql: R3_V2_SQL }, 2, 'DRAFT', 3);
-  const r4v1 = v(R4, 1, 'IN_PRODUCTION', 140, { submittedAt: daysAgo(139), airflowDagId: 'fraud_rule_changement_email' });
+  const r4v1 = v(R4, 1, 'SUBMITTED', 140, { submittedAt: daysAgo(139), airflowDagId: 'fraud_rule_changement_email' });
   const r5v1 = v(R5, 1, 'SUBMITTED', 6, { submittedAt: daysAgo(5) });
-  const r6v1 = v(R6, 1, 'VALIDATED', 12, { submittedAt: daysAgo(11) });
-  const r7v1 = v(R7, 1, 'REJECTED', 20, {
-    submittedAt: daysAgo(19),
-    rejectionReason:
-      'Fenêtre glissante de 30 jours recalculée à chaque run : coût de scan trop élevé en horaire. Proposer une version quotidienne pré-agrégée.',
-  });
+  const r6v1 = v(R6, 1, 'SUBMITTED', 12, { submittedAt: daysAgo(11) });
+  const r7v1 = v(R7, 1, 'SUBMITTED', 20, { submittedAt: daysAgo(19) });
+  const r7v2 = v({ ...R7, sql: R7_V2_SQL }, 2, 'SUBMITTED', 3, { submittedAt: daysAgo(2) });
   const r8v1 = v(R8, 1, 'DRAFT', 1);
 
   const rules: MockRule[] = [
@@ -273,7 +277,8 @@ export function buildSeed(): MockDb {
       ruleId: R2.id,
       versions: [r2v1],
       productionSince: { 1: daysAgo(115).slice(0, 10) },
-      productionUntil: {},
+      // Plus aucun run depuis 5 jours : la règle apparaît « inactive ».
+      productionUntil: { 1: daysAgo(5).slice(0, 10) },
       profile: { dailyVolume: 14, processingRate: 0.9, precision: 0.58 },
     },
     {
@@ -292,7 +297,7 @@ export function buildSeed(): MockDb {
     },
     { ruleId: R5.id, versions: [r5v1], productionSince: {}, productionUntil: {} },
     { ruleId: R6.id, versions: [r6v1], productionSince: {}, productionUntil: {} },
-    { ruleId: R7.id, versions: [r7v1], productionSince: {}, productionUntil: {} },
+    { ruleId: R7.id, versions: [r7v1, r7v2], productionSince: {}, productionUntil: {} },
     { ruleId: R8.id, versions: [r8v1], productionSince: {}, productionUntil: {} },
   ];
 
@@ -305,6 +310,7 @@ export function buildSeed(): MockDb {
     passedTest(r5v1, 6, '118870', 5),
     passedTest(r6v1, 12, '120415', 6),
     passedTest(r7v1, 20, '104233', 7),
+    passedTest(r7v2, 2, '104233', 8),
     {
       id: 'seed-test-08-1-fail',
       ruleId: R8.id,
@@ -327,8 +333,6 @@ export function buildSeed(): MockDb {
     for (const ver of rule.versions) {
       ev(ver.createdAt, ver.ownerMatricule, ver.version === 1 ? 'RULE_CREATE' : 'RULE_NEW_VERSION', ver);
       if (ver.submittedAt) ev(ver.submittedAt, ver.ownerMatricule, 'RULE_SUBMIT', ver);
-      if (ver.status !== 'DRAFT' && ver.status !== 'SUBMITTED')
-        ev(ver.updatedAt, '000000', 'RULE_STATUS_CHANGE', ver, `→ ${ver.status} (écriture directe en base, équipe data)`);
     }
   }
   for (const t of tests) {

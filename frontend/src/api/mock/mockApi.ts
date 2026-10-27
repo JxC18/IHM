@@ -119,11 +119,40 @@ export function createMockApi(): Api {
     return db.tests.filter((t) => t.ruleId === ruleId && t.version === version).sort((a, b) => b.at.localeCompare(a.at))[0];
   }
 
+  // ---------- statuts déduits des runs Airflow (même logique que backend/app/rules.py) ----------
+  const PERIOD_DAYS = { HOURLY: 1 / 24, DAILY: 1, WEEKLY: 7 } as const;
+  const INACTIVE_AFTER_PERIODS = 3;
+
+  function withRuns(r: MockRule, v: RuleVersion): RuleVersion {
+    const since = r.productionSince[v.version];
+    if (since === undefined) return clone(v);
+    // Sans date d'arrêt, la version tourne toujours : son dernier run vient d'avoir lieu.
+    const until = r.productionUntil[v.version];
+    const lastRunAt = until ? `${until}T03:00:00.000Z` : new Date(Date.now() - 20 * 60000).toISOString();
+    return { ...clone(v), firstRunAt: `${since}T03:00:00.000Z`, lastRunAt };
+  }
+
+  function deriveStatus(r: MockRule, v: RuleVersion): RuleVersion['status'] {
+    if (v.status === 'DRAFT') return 'DRAFT';
+    const newer = r.versions.filter((w) => w.version > v.version);
+    if (newer.some((w) => r.productionSince[w.version] !== undefined)) return 'REPLACED';
+    const run = withRuns(r, v);
+    if (run.lastRunAt) {
+      const idleDays = (Date.now() - new Date(run.lastRunAt).getTime()) / 86400000;
+      return idleDays > PERIOD_DAYS[v.schedule] * INACTIVE_AFTER_PERIODS ? 'INACTIVE' : 'IN_PRODUCTION';
+    }
+    if (newer.some((w) => w.status === 'SUBMITTED')) return 'REPLACED';
+    return 'SUBMITTED';
+  }
+
+  const view = (r: MockRule, v: RuleVersion): RuleVersion => ({ ...withRuns(r, v), status: deriveStatus(r, v) });
+  const running = (r: MockRule) => r.versions.find((v) => ['IN_PRODUCTION', 'INACTIVE'].includes(deriveStatus(r, v)));
+
   function summary(r: MockRule): RuleSummary {
     const cur = current(r);
-    const prod = r.versions.find((v) => v.status === 'IN_PRODUCTION');
+    const prod = running(r);
     return {
-      ...clone(cur),
+      ...view(r, cur),
       versionCount: r.versions.length,
       productionVersion: prod && prod.version !== cur.version ? prod.version : undefined,
       lastTest: lastTestFor(r.ruleId, cur.version),
@@ -133,7 +162,7 @@ export function createMockApi(): Api {
   function detail(r: MockRule): RuleDetail {
     return {
       ...summary(r),
-      versions: clone(r.versions).reverse(),
+      versions: r.versions.map((v) => view(r, v)).reverse(),
       tests: db.tests.filter((t) => t.ruleId === r.ruleId).sort((a, b) => b.at.localeCompare(a.at)),
     };
   }
@@ -374,7 +403,7 @@ export function createMockApi(): Api {
             test.version = v.version;
           }
         }
-        audit(u, 'RULE_NEW_VERSION', v, `Nouvelle version créée à partir de la v${cur.version} (${cur.status})`);
+        audit(u, 'RULE_NEW_VERSION', v, `Nouvelle version créée à partir de la v${cur.version} (${deriveStatus(r, cur)})`);
       }
       save();
       return detail(r);
@@ -475,9 +504,9 @@ export function createMockApi(): Api {
       const to = isoDate(new Date());
       const from = addDays(to, -29);
       return db.rules
-        .filter((r) => r.versions.some((v) => v.status === 'IN_PRODUCTION'))
+        .filter((r) => running(r))
         .map((r) => {
-          const v = r.versions.find((x) => x.status === 'IN_PRODUCTION')!;
+          const v = view(r, running(r)!);
           const d = daily(r, from, to);
           return {
             ruleId: r.ruleId,
@@ -486,6 +515,8 @@ export function createMockApi(): Api {
             fraudTypology: v.fraudTypology,
             criticality: v.criticality,
             ownerName: v.ownerName,
+            status: v.status,
+            lastRunAt: v.lastRunAt,
             ordersFlagged30d: d.reduce((s, x) => s + x.ordersFlagged, 0),
             ordersProcessed30d: d.reduce((s, x) => s + x.ordersProcessed, 0),
             ordersConfirmed30d: d.reduce((s, x) => s + x.ordersConfirmedFraud, 0),
@@ -500,47 +531,30 @@ export function createMockApi(): Api {
     },
 
     demo: {
-      async setStatus(id, status, reason) {
+      async simulateRuns(id) {
+        await delay();
+        const u = currentUser();
+        const r = findRule(id);
+        const target = [...r.versions].reverse().find((v) => v.status === 'SUBMITTED' && r.productionSince[v.version] === undefined);
+        if (!target) throw new ApiError(409, 'Aucune version soumise en attente de mise en production.');
+        r.productionSince[target.version] = isoDate(new Date());
+        target.airflowDagId = `fraud_rule_${target.ruleId.slice(0, 8)}_v${target.version}`;
+        r.profile ??= { dailyVolume: 10 + Math.round(rnd(id) * 40), processingRate: 0.75, precision: 0.2 + rnd(id + 'p') * 0.4 };
+        void u;
+        save();
+        return detail(r);
+      },
+      async simulateStop(id) {
         await delay();
         currentUser();
         const r = findRule(id);
-        const cur = current(r);
-        const allowed: Record<string, string[]> = {
-          VALIDATED: ['SUBMITTED'],
-          REJECTED: ['SUBMITTED'],
-          IN_PRODUCTION: ['VALIDATED'],
-          DISABLED: ['IN_PRODUCTION', 'VALIDATED'],
-        };
-        // Une version en production peut être désactivée même si une version plus récente existe.
-        const target = status === 'DISABLED' ? r.versions.find((v) => v.status === 'IN_PRODUCTION') ?? cur : cur;
-        if (!allowed[status].includes(target.status)) throw new ApiError(409, `Transition ${target.status} → ${status} non autorisée.`);
-        const today = isoDate(new Date());
-        if (status === 'IN_PRODUCTION') {
-          for (const v of r.versions) {
-            if (v.status === 'IN_PRODUCTION') {
-              v.status = 'DISABLED';
-              r.productionUntil[v.version] = addDays(today, -1);
-            }
-          }
-          r.productionSince[target.version] = today;
-          target.airflowDagId = `fraud_rule_${target.ruleId.slice(0, 8)}_v${target.version}`;
-          r.profile ??= { dailyVolume: 10 + Math.round(rnd(id) * 40), processingRate: 0.75, precision: 0.2 + rnd(id + 'p') * 0.4 };
-        }
-        if (status === 'DISABLED' && target.status === 'IN_PRODUCTION') r.productionUntil[target.version] = today;
-        target.status = status;
-        target.rejectionReason = status === 'REJECTED' ? reason || 'Motif non renseigné' : undefined;
-        target.updatedAt = now();
-        db.audit.unshift({
-          id: uid(),
-          at: now(),
-          matricule: '000000',
-          userName: 'Équipe data (base)',
-          action: 'RULE_STATUS_CHANGE',
-          ruleId: id,
-          ruleName: target.name,
-          version: target.version,
-          details: `→ ${status}${reason ? ` : ${reason}` : ''} (simulation)`,
-        });
+        const run = running(r);
+        if (!run) throw new ApiError(409, "Aucune version n'est exécutée par Airflow.");
+        // Dernier run juste au-delà du seuil d'inactivité (3 périodes selon la fréquence de la règle).
+        const until = addDays(isoDate(new Date()), -(Math.ceil(PERIOD_DAYS[run.schedule] * INACTIVE_AFTER_PERIODS) + 1));
+        r.productionUntil[run.version] = until;
+        // Le premier run doit précéder le dernier.
+        if (r.productionSince[run.version] > until) r.productionSince[run.version] = addDays(until, -7);
         save();
         return detail(r);
       },
