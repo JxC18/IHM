@@ -10,29 +10,14 @@ from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
-from app import models  # noqa: E402, F401
-from app.db import Base, get_db  # noqa: E402
+from app.bigquery import FakeBigQueryGateway, get_bigquery  # noqa: E402
+from app.database import Base, get_db  # noqa: E402
 from app.main import create_app  # noqa: E402
-from app.services.bigquery import FakeBigQueryGateway, get_bigquery  # noqa: E402
-from app.services.registry import get_registry  # noqa: E402
-
-
-class RecordingRegistry:
-    def __init__(self):
-        self.upserts = []
-
-    def upsert(self, v, owner_matricule):
-        self.upserts.append((v.rule_id, v.version, v.status))
 
 
 @pytest.fixture
 def bq():
     return FakeBigQueryGateway()
-
-
-@pytest.fixture
-def registry():
-    return RecordingRegistry()
 
 
 @pytest.fixture
@@ -43,7 +28,7 @@ def session_factory():
 
 
 @pytest.fixture
-def client(bq, registry, session_factory):
+def client(bq, session_factory):
     def db():
         with session_factory() as s:
             yield s
@@ -51,7 +36,6 @@ def client(bq, registry, session_factory):
     app = create_app()
     app.dependency_overrides[get_db] = db
     app.dependency_overrides[get_bigquery] = lambda: bq
-    app.dependency_overrides[get_registry] = lambda: registry
     with TestClient(app) as c:
         yield c
 

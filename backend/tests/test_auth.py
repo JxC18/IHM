@@ -2,7 +2,7 @@ from datetime import timedelta
 
 import pytest
 
-from app.models import UserSession
+from app.database import UserSession
 from tests.conftest import login
 
 

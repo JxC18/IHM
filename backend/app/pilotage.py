@@ -1,4 +1,7 @@
-"""F6, F7 — indicateurs, lus dans BigQuery (vue v_rule_performance, table rule_runs)."""
+"""Pilotage, en lecture seule : indicateurs de performance (F6, F7) et journal d'audit (F8).
+
+Les indicateurs sont lus dans BigQuery (vue v_rule_performance, table rule_runs).
+"""
 
 from datetime import date, timedelta
 
@@ -6,16 +9,14 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.auth import full_name, get_current_user
-from app.config import Settings, get_settings
-from app.db import get_db
-from app.errors import ApiError
-from app.models import Rule, User
-from app.schemas import ConsolidatedRow, PerformanceResponse
-from app.services.bigquery import BigQueryGateway, get_bigquery
-from app.services.rules import get_rule
+from app.auth import get_current_user
+from app.bigquery import BigQueryGateway, get_bigquery
+from app.core import ApiError, Settings, get_settings
+from app.database import AuditEvent, Rule, User, get_db
+from app.rules import load_rule
+from app.schemas import AuditEventOut, ConsolidatedRow, PerformanceResponse
 
-router = APIRouter(tags=["indicateurs"])
+router = APIRouter(tags=["pilotage"])
 
 
 @router.get("/rules/{rule_id}/performance", response_model=PerformanceResponse)
@@ -30,7 +31,7 @@ def performance(
 ):
     if from_ > to:
         raise ApiError(422, "La date de début doit précéder la date de fin.")
-    get_rule(db, rule_id)
+    load_rule(db, rule_id)
     length = (to - from_).days + 1
     prev_to = from_ - timedelta(days=1)
     return PerformanceResponse(
@@ -66,10 +67,26 @@ def production(
                 version=v.version,
                 fraud_typology=v.fraud_typology,
                 criticality=v.criticality,  # type: ignore[arg-type]
-                owner_name=full_name(owner) if owner else r.owner_matricule,
+                owner_name=owner.full_name if owner else r.owner_matricule,
                 ordersFlagged30d=t.flagged if t else 0,
                 ordersProcessed30d=t.processed if t else 0,
                 ordersConfirmed30d=t.confirmed if t else 0,
             )
         )
     return out
+
+
+@router.get("/audit", response_model=list[AuditEventOut])
+def list_audit(
+    ruleId: str | None = None,  # noqa: N803 — nom du paramètre attendu par le front
+    matricule: str | None = None,
+    limit: int = 500,
+    _: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    q = select(AuditEvent).order_by(AuditEvent.at.desc()).limit(min(limit, 2000))
+    if ruleId:
+        q = q.where(AuditEvent.rule_id == ruleId)
+    if matricule:
+        q = q.where(AuditEvent.matricule == matricule)
+    return db.scalars(q).all()

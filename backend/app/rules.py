@@ -1,24 +1,36 @@
-"""Référentiel et cycle de vie des règles (PRD F1, F4, F5)."""
+"""Règles : référentiel, versions, soumission à l'équipe data (PRD F1, F4, F5)."""
 
+import json
+import logging
 import re
 import unicodedata
+import urllib.request
 import uuid
 from datetime import date, timedelta
 
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app.auth import full_name
-from app.clock import as_utc, now
-from app.errors import ApiError
-from app.models import Rule, RuleVersion, TestRun, User
-from app.schemas import RuleDetail, RuleInput, RuleParameter, RuleSummary, RuleVersionOut, TestRecord
-from app.services import audit
-from app.services.bigquery import BigQueryGateway, QueryError
-from app.services.notifier import notify_submission
-from app.services.registry import Registry
-from app.services.sql_checks import query_hash
+from app.auth import get_current_user
+from app.bigquery import BigQueryGateway, QueryError, get_bigquery
+from app.core import ApiError, as_utc, get_settings, now
+from app.database import Rule, RuleVersion, TestRun, User, get_db, record_audit
+from app.schemas import (
+    NameAvailable,
+    RuleDetail,
+    RuleInput,
+    RuleParameter,
+    RuleStatus,
+    RuleSummary,
+    RuleVersionOut,
+    TestRecord,
+)
+from app.sql_checks import query_hash
+
+log = logging.getLogger(__name__)
+router = APIRouter(prefix="/rules", tags=["règles"])
 
 REQUIRED = {
     "name": "Nom",
@@ -42,7 +54,7 @@ def _users(db: Session) -> dict[str, User]:
 def _test_out(t: TestRun, users: dict[str, User]) -> TestRecord:
     u = users.get(t.by_matricule)
     fields = {k: getattr(t, k) for k in TestRecord.model_fields if k != "by_name"}
-    return TestRecord(**fields, by_name=full_name(u) if u else t.by_matricule)
+    return TestRecord(**fields, by_name=u.full_name if u else t.by_matricule)
 
 
 def _version_out(v: RuleVersion, rule: Rule, users: dict[str, User]) -> RuleVersionOut:
@@ -60,7 +72,7 @@ def _version_out(v: RuleVersion, rule: Rule, users: dict[str, User]) -> RuleVers
         status=v.status,  # type: ignore[arg-type]
         rejection_reason=v.rejection_reason,
         owner_matricule=rule.owner_matricule,
-        owner_name=full_name(owner) if owner else rule.owner_matricule,
+        owner_name=owner.full_name if owner else rule.owner_matricule,
         created_at=v.created_at,
         updated_at=v.updated_at,
         submitted_at=v.submitted_at,
@@ -100,7 +112,7 @@ def detail(db: Session, rule: Rule) -> RuleDetail:
     )
 
 
-def get_rule(db: Session, rule_id: str) -> Rule:
+def load_rule(db: Session, rule_id: str) -> Rule:
     rule = db.scalars(
         select(Rule).where(Rule.rule_id == rule_id).options(selectinload(Rule.versions))
     ).first()
@@ -109,34 +121,7 @@ def get_rule(db: Session, rule_id: str) -> Rule:
     return rule
 
 
-def list_rules(
-    db: Session,
-    q: str = "",
-    status: str = "",
-    typology: str = "",
-    owner: str = "",
-    criticality: str = "",
-    sort: str = "updated_desc",
-) -> list[RuleSummary]:
-    # Volumétrie de l'ordre de la centaine (PRD H1) : filtrage en mémoire sur la version courante.
-    users = _users(db)
-    rules = db.scalars(select(Rule).options(selectinload(Rule.versions))).all()
-    needle = name_key(q) if q else ""
-    out = []
-    for r in rules:
-        cur = r.versions[-1]
-        if needle and needle not in name_key(f"{cur.name}\n{cur.description}\n{cur.sql_query}"):
-            continue
-        if (status and cur.status != status) or (typology and cur.fraud_typology != typology):
-            continue
-        if (owner and r.owner_matricule != owner) or (criticality and cur.criticality != criticality):
-            continue
-        out.append(summary(db, r, users))
-    out.sort(key=lambda s: s.updated_at, reverse=sort != "updated_asc")
-    return out
-
-
-def name_available(db: Session, name: str, exclude_rule_id: str | None = None) -> bool:
+def _name_free(db: Session, name: str, exclude_rule_id: str | None = None) -> bool:
     existing = db.scalars(select(Rule).where(Rule.name_key == name_key(name))).first()
     return existing is None or existing.rule_id == exclude_rule_id
 
@@ -146,13 +131,11 @@ def _first_keyword(sql: str) -> str:
     return m.group(1).upper() if m else ""
 
 
-def validate_input(
-    db: Session, bq: BigQueryGateway, data: RuleInput, exclude_rule_id: str | None = None
-) -> None:
+def _validate(db: Session, bq: BigQueryGateway, data: RuleInput, exclude_rule_id: str | None = None) -> None:
     missing = [label for f, label in REQUIRED.items() if not str(getattr(data, f)).strip()]
     if missing:
         raise ApiError(422, f"Champs obligatoires manquants : {', '.join(missing)}.")
-    if not name_available(db, data.name, exclude_rule_id):
+    if not _name_free(db, data.name, exclude_rule_id):
         raise ApiError(409, f"Une règle nommée « {data.name.strip()} » existe déjà.", "NAME_TAKEN")
     # DML/DDL rejetés dès l'enregistrement, d'après le dry-run quand il aboutit (PRD F2).
     # Les autres contraintes (order_id, @run_date…) bloquent la soumission, pas le brouillon.
@@ -202,10 +185,73 @@ def _commit_name(db: Session, name: str) -> None:
         raise ApiError(409, f"Une règle nommée « {name.strip()} » existe déjà.", "NAME_TAKEN") from e
 
 
+def notify_submission(v: RuleVersion, by: str) -> None:
+    payload = {"event": "RULE_SUBMITTED", "ruleId": v.rule_id, "version": v.version, "name": v.name, "by": by}
+    url = get_settings().notify_webhook_url
+    if not url:
+        log.info("notification équipe data (pas de canal configuré) : %s", payload)
+        return
+    try:
+        req = urllib.request.Request(url, json.dumps(payload).encode(), {"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=5).close()
+    except OSError:
+        # La soumission est enregistrée ; un échec de notification ne doit pas l'annuler.
+        log.exception("échec de la notification équipe data")
+
+
+# --------------------------------------------------------------------------- routes
+
+
+@router.get("", response_model=list[RuleSummary])
+def list_rules(
+    q: str = "",
+    status: RuleStatus | None = None,
+    typology: str = "",
+    owner: str = "",
+    criticality: str = "",
+    sort: str = "updated_desc",
+    _: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[RuleSummary]:
+    # Volumétrie de l'ordre de la centaine (PRD H1) : filtrage en mémoire sur la version courante.
+    users = _users(db)
+    rules = db.scalars(select(Rule).options(selectinload(Rule.versions))).all()
+    needle = name_key(q) if q else ""
+    out = []
+    for r in rules:
+        cur = r.versions[-1]
+        if needle and needle not in name_key(f"{cur.name}\n{cur.description}\n{cur.sql_query}"):
+            continue
+        if (status and cur.status != status) or (typology and cur.fraud_typology != typology):
+            continue
+        if (owner and r.owner_matricule != owner) or (criticality and cur.criticality != criticality):
+            continue
+        out.append(summary(db, r, users))
+    out.sort(key=lambda s: s.updated_at, reverse=sort != "updated_asc")
+    return out
+
+
+# Déclarée avant /{rule_id} pour ne pas être capturée par celle-ci.
+@router.get("/name-available", response_model=NameAvailable)
+def name_available(
+    name: str, exclude: str | None = None, _: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> NameAvailable:
+    return NameAvailable(available=_name_free(db, name, exclude))
+
+
+@router.get("/{rule_id}", response_model=RuleDetail)
+def get_rule(rule_id: str, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> RuleDetail:
+    return detail(db, load_rule(db, rule_id))
+
+
+@router.post("", response_model=RuleDetail, status_code=201)
 def create_rule(
-    db: Session, bq: BigQueryGateway, registry: Registry, user: User, data: RuleInput
+    data: RuleInput,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    bq: BigQueryGateway = Depends(get_bigquery),
 ) -> RuleDetail:
-    validate_input(db, bq, data)
+    _validate(db, bq, data)
     t = now()
     rule = Rule(
         rule_id=str(uuid.uuid4()), owner_matricule=user.matricule, created_at=t, name_key=name_key(data.name)
@@ -216,17 +262,22 @@ def create_rule(
     db.add(rule)
     db.flush()
     _adopt_tests(db, user, v, None, None)
-    audit.record(db, user, "RULE_CREATE", v)
+    record_audit(db, user, "RULE_CREATE", v)
     _commit_name(db, data.name)
-    registry.upsert(v, rule.owner_matricule)
+    bq.publish_rule(v, rule.owner_matricule)
     return detail(db, rule)
 
 
+@router.put("/{rule_id}", response_model=RuleDetail)
 def update_rule(
-    db: Session, bq: BigQueryGateway, registry: Registry, user: User, rule_id: str, data: RuleInput
+    rule_id: str,
+    data: RuleInput,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    bq: BigQueryGateway = Depends(get_bigquery),
 ) -> RuleDetail:
-    rule = get_rule(db, rule_id)
-    validate_input(db, bq, data, rule_id)
+    rule = load_rule(db, rule_id)
+    _validate(db, bq, data, rule_id)
     cur = rule.versions[-1]
     t = now()
     rule.name_key = name_key(data.name)
@@ -234,7 +285,7 @@ def update_rule(
         _apply(cur, data)
         cur.updated_at = t
         target = cur
-        audit.record(db, user, "RULE_UPDATE", cur)
+        record_audit(db, user, "RULE_UPDATE", cur)
     else:
         # Une version non-DRAFT n'est plus modifiable : nouvelle version en DRAFT (PRD F5).
         target = RuleVersion(
@@ -244,7 +295,7 @@ def update_rule(
         rule.versions.append(target)
         db.flush()
         _adopt_tests(db, user, target, rule_id, cur.version)
-        audit.record(
+        record_audit(
             db,
             user,
             "RULE_NEW_VERSION",
@@ -252,12 +303,18 @@ def update_rule(
             f"Nouvelle version créée à partir de la v{cur.version} ({cur.status})",
         )
     _commit_name(db, data.name)
-    registry.upsert(target, rule.owner_matricule)
+    bq.publish_rule(target, rule.owner_matricule)
     return detail(db, rule)
 
 
-def submit_rule(db: Session, registry: Registry, user: User, rule_id: str) -> RuleDetail:
-    rule = get_rule(db, rule_id)
+@router.post("/{rule_id}/submit", response_model=RuleDetail)
+def submit_rule(
+    rule_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    bq: BigQueryGateway = Depends(get_bigquery),
+) -> RuleDetail:
+    rule = load_rule(db, rule_id)
     cur = rule.versions[-1]
     if cur.status != "DRAFT":
         raise ApiError(409, "Seule une version en brouillon peut être soumise.")
@@ -271,8 +328,8 @@ def submit_rule(db: Session, registry: Registry, user: User, rule_id: str) -> Ru
         )
     cur.status = "SUBMITTED"
     cur.submitted_at = cur.updated_at = now()
-    audit.record(db, user, "RULE_SUBMIT", cur, "Notification envoyée à l'équipe data")
+    record_audit(db, user, "RULE_SUBMIT", cur, "Notification envoyée à l'équipe data")
     db.commit()
-    registry.upsert(cur, rule.owner_matricule)
+    bq.publish_rule(cur, rule.owner_matricule)
     notify_submission(cur, user.matricule)
     return detail(db, rule)

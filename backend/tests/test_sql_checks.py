@@ -1,5 +1,5 @@
 from app.schemas import RuleParameter
-from app.services.sql_checks import check_params, find_params, query_hash
+from app.sql_checks import check_params, find_params, query_hash
 
 
 def test_params_ignores_dans_chaines_et_commentaires():

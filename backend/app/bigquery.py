@@ -1,9 +1,14 @@
 """Accès BigQuery. Seul module à détenir un client (le front n'a jamais de credentials, PRD §8.1).
 
+Trois usages : tester les requêtes (F3), lire les indicateurs (F6, F7) et publier les
+règles dans `rules_registry` pour l'équipe data et Airflow (PRD §7.2).
+
 Les garde-fous F3 sont posés ici, côté serveur, donc non contournables depuis l'IHM :
 `maximum_bytes_billed`, `job_timeout_ms`, `max_results`.
 """
 
+import json
+import logging
 import re
 import time
 from dataclasses import dataclass, field
@@ -11,8 +16,11 @@ from datetime import date
 from functools import lru_cache
 from typing import Any, Protocol
 
-from app.config import Settings, get_settings
+from app.core import Settings, get_settings
+from app.database import RuleVersion
 from app.schemas import Column, DailyPerformance, RuleParameter, RuleRun
+
+log = logging.getLogger(__name__)
 
 
 class QueryError(Exception):
@@ -64,6 +72,10 @@ class BigQueryGateway(Protocol):
     def runs(self, rule_id: str, start: date, end: date, limit: int = 20) -> list[RuleRun]: ...
 
     def production_totals(self, rule_ids: list[str], start: date, end: date) -> list[ProductionTotals]: ...
+
+    def publish_rule(self, v: RuleVersion, owner_matricule: str) -> None:
+        """Écrit la version dans `rules_registry` (création ou mise à jour)."""
+        ...
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +207,56 @@ class RealBigQueryGateway:
             for r in rows
         ]
 
+    def upsert(self, v: RuleVersion, owner_matricule: str) -> None: ...
+
+
+class LoggingRegistry:
+    def upsert(self, v: RuleVersion, owner_matricule: str) -> None:
+        log.info("rules_registry ← %s v%s (%s)", v.rule_id, v.version, v.status)
+
+
+class BigQueryRegistry:
+    def __init__(self) -> None:
+        from google.cloud import bigquery
+
+        s = get_settings()
+        self._bq = bigquery
+        self.client = bigquery.Client(project=s.gcp_project or None, location=s.bq_location)
+        self.table = f"`{self.client.project}.{s.bq_dataset}.rules_registry`"
+
+    def publish_rule(self, v: RuleVersion, owner_matricule: str) -> None:
+        P = self._bq.ScalarQueryParameter
+        params = [
+            P("rule_id", "STRING", v.rule_id),
+            P("version", "INT64", v.version),
+            P("name", "STRING", v.name),
+            P("description", "STRING", v.description),
+            P("fraud_typology", "STRING", v.fraud_typology),
+            P("criticality", "STRING", v.criticality),
+            P("schedule", "STRING", v.schedule),
+            P("sql_query", "STRING", v.sql_query),
+            P("parameters", "STRING", json.dumps(v.parameters)),
+            P("status", "STRING", v.status),
+            P("owner_matricule", "STRING", owner_matricule),
+            P("created_at", "TIMESTAMP", v.created_at),
+            P("updated_at", "TIMESTAMP", v.updated_at),
+        ]
+        sql = f"""
+        MERGE {self.ds}.rules_registry t
+        USING (SELECT @rule_id AS rule_id, @version AS version) s
+        ON t.rule_id = s.rule_id AND t.version = s.version
+        WHEN MATCHED THEN UPDATE SET
+          name = @name, description = @description, fraud_typology = @fraud_typology,
+          criticality = @criticality, schedule = @schedule, sql_query = @sql_query,
+          parameters = PARSE_JSON(@parameters), status = @status, updated_at = @updated_at
+        WHEN NOT MATCHED THEN INSERT
+          (rule_id, version, name, description, fraud_typology, criticality, schedule, sql_query,
+           parameters, status, owner_matricule, created_at, updated_at)
+        VALUES (@rule_id, @version, @name, @description, @fraud_typology, @criticality, @schedule,
+                @sql_query, PARSE_JSON(@parameters), @status, @owner_matricule, @created_at, @updated_at)
+        """
+        self.client.query(sql, job_config=self._bq.QueryJobConfig(query_parameters=params)).result()
+
 
 def _jsonable(v: Any) -> Any:
     if isinstance(v, str | int | float | bool) or v is None:
@@ -218,6 +280,7 @@ class FakeBigQueryGateway:
     next_dry_run: DryRunMeta | None = None
     next_error: QueryError | None = None
     performance: dict[str, list[DailyPerformance]] = field(default_factory=dict)
+    published: list[tuple[str, int, str]] = field(default_factory=list)
 
     def dry_run(self, sql, params, run_date):
         if self.next_error:
@@ -261,6 +324,10 @@ class FakeBigQueryGateway:
                 )
             )
         return out
+
+    def publish_rule(self, v, owner_matricule):
+        log.info("rules_registry ← %s v%s (%s)", v.rule_id, v.version, v.status)
+        self.published.append((v.rule_id, v.version, v.status))
 
 
 @lru_cache

@@ -1,5 +1,5 @@
+from app.bigquery import DryRunMeta, QueryError
 from app.schemas import Column
-from app.services.bigquery import DryRunMeta, QueryError
 from tests.conftest import login
 
 SQL = """SELECT
@@ -19,7 +19,7 @@ RULE = {
 }
 
 
-def test_parcours_complet_creation_test_soumission(client, registry):
+def test_parcours_complet_creation_test_soumission(client, bq):
     login(client)
     rule = client.post("/rules", json=RULE).json()
     rid = rule["ruleId"]
@@ -37,7 +37,7 @@ def test_parcours_complet_creation_test_soumission(client, registry):
     r = client.post(f"/rules/{rid}/submit")
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "SUBMITTED"
-    assert registry.upserts[-1] == (rid, 1, "SUBMITTED")
+    assert bq.published[-1] == (rid, 1, "SUBMITTED")
 
     # Une règle soumise n'est plus modifiable : nouvelle version en DRAFT.
     r = client.put(f"/rules/{rid}", json={**RULE, "description": "v2"}).json()

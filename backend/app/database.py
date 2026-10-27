@@ -1,9 +1,11 @@
-"""État applicatif (Cloud SQL / PostgreSQL, PRD §8.3).
+"""Base applicative (Cloud SQL / PostgreSQL, PRD §8.3) : connexion, tables, journal d'audit.
 
 Le matricule est la clé d'identité partout (PRD §5.4, règle 1) : passer au SSO
 changera la source du matricule, pas ces tables.
 """
 
+import uuid
+from collections.abc import Iterator
 from datetime import datetime
 from typing import Any
 
@@ -18,10 +20,39 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    create_engine,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
-from app.db import Base
+from app.core import get_settings, now
+
+# --------------------------------------------------------------------------- connexion
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+_engine = None
+_SessionLocal: sessionmaker[Session] | None = None
+
+
+def init_engine(url: str | None = None, **kwargs):
+    global _engine, _SessionLocal
+    _engine = create_engine(url or get_settings().database_url, pool_pre_ping=True, **kwargs)
+    _SessionLocal = sessionmaker(_engine, expire_on_commit=False)
+    return _engine
+
+
+def get_db() -> Iterator[Session]:
+    if _SessionLocal is None:
+        init_engine()
+    assert _SessionLocal is not None
+    with _SessionLocal() as session:
+        yield session
+
+
+# --------------------------------------------------------------------------- tables
 
 
 class User(Base):
@@ -31,6 +62,10 @@ class User(Base):
     first_name: Mapped[str] = mapped_column(String(100))
     last_name: Mapped[str] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    @property
+    def full_name(self) -> str:
+        return f"{self.first_name} {self.last_name}"
 
 
 class UserSession(Base):
@@ -116,3 +151,22 @@ class AuditEvent(Base):
     rule_name: Mapped[str | None] = mapped_column(String(200))
     version: Mapped[int | None] = mapped_column(Integer)
     details: Mapped[str | None] = mapped_column(Text)
+
+
+def record_audit(
+    db: Session, user: User, action: str, version: RuleVersion | None = None, details: str | None = None
+) -> None:
+    """Ajoute un événement au journal (jamais de mise à jour ni de suppression)."""
+    db.add(
+        AuditEvent(
+            id=str(uuid.uuid4()),
+            at=now(),
+            matricule=user.matricule,
+            user_name=user.full_name,
+            action=action,
+            rule_id=version.rule_id if version else None,
+            rule_name=version.name if version else None,
+            version=version.version if version else None,
+            details=details,
+        )
+    )

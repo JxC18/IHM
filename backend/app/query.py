@@ -3,17 +3,18 @@
 import uuid
 from datetime import date, datetime, timedelta
 
+from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.clock import now
-from app.config import Settings
-from app.errors import ApiError
-from app.models import Rule, TestRun, User
-from app.schemas import BudgetUsage, DryRunResult, ExecutionResult, QueryIn, SqlIssue
-from app.services import audit
-from app.services.bigquery import BigQueryGateway, BytesLimitExceeded, QueryError
-from app.services.sql_checks import check_hardcoded_dates, check_params, query_hash
+from app.auth import get_current_user
+from app.bigquery import BigQueryGateway, BytesLimitExceeded, QueryError, get_bigquery
+from app.core import ApiError, Settings, get_settings, now
+from app.database import Rule, TestRun, User, get_db, record_audit
+from app.schemas import BudgetUsage, DryRunResult, ExecutionResult, Guardrails, QueryIn, SqlIssue
+from app.sql_checks import check_hardcoded_dates, check_params, query_hash
+
+router = APIRouter(tags=["test"])
 
 
 def _test_run_date() -> date:
@@ -25,7 +26,7 @@ def _month_start(t: datetime) -> datetime:
     return t.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
-def budget(db: Session, settings: Settings, user: User) -> BudgetUsage:
+def _budget(db: Session, settings: Settings, user: User) -> BudgetUsage:
     t = now()
     used = db.scalar(
         select(func.coalesce(func.sum(TestRun.bytes_processed), 0)).where(
@@ -55,7 +56,7 @@ def _record(db: Session, user: User, body: QueryIn, **fields) -> TestRun:
     db.add(run)
     phase = "Exécution échantillonnée" if fields["phase"] == "EXECUTION" else "Dry-run"
     outcome = "réussi" if fields["success"] else f"en échec : {fields.get('error') or ''}"
-    audit.record(db, user, "RULE_TEST", rule.versions[-1] if rule else None, f"{phase} {outcome}")
+    record_audit(db, user, "RULE_TEST", rule.versions[-1] if rule else None, f"{phase} {outcome}")
     db.commit()
     return run
 
@@ -90,7 +91,35 @@ def _analyse(bq: BigQueryGateway, body: QueryIn) -> tuple[list[SqlIssue], object
     return issues, meta
 
 
-def dry_run(db: Session, bq: BigQueryGateway, settings: Settings, user: User, body: QueryIn) -> DryRunResult:
+# --------------------------------------------------------------------------- routes
+
+
+@router.get("/config/guardrails", response_model=Guardrails)
+def guardrails(_: User = Depends(get_current_user), s: Settings = Depends(get_settings)) -> Guardrails:
+    return Guardrails(
+        max_bytes_billed=s.max_bytes_billed,
+        job_timeout_ms=s.job_timeout_ms,
+        max_results=s.max_results,
+        monthly_budget_bytes=s.monthly_budget_bytes,
+        cost_per_tb_eur=s.cost_per_tb_eur,
+    )
+
+
+@router.get("/me/budget", response_model=BudgetUsage)
+def budget(
+    user: User = Depends(get_current_user), db: Session = Depends(get_db), s: Settings = Depends(get_settings)
+) -> BudgetUsage:
+    return _budget(db, s, user)
+
+
+@router.post("/query/dry-run", response_model=DryRunResult)
+def dry_run(
+    body: QueryIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    bq: BigQueryGateway = Depends(get_bigquery),
+    settings: Settings = Depends(get_settings),
+) -> DryRunResult:
     issues, meta = _analyse(bq, body)
     ok = meta is not None and not any(i.severity == "error" for i in issues)
     cost = (meta.bytes_processed / 1e12) * settings.cost_per_tb_eur if meta else None
@@ -117,8 +146,13 @@ def dry_run(db: Session, bq: BigQueryGateway, settings: Settings, user: User, bo
     )
 
 
+@router.post("/query/execute", response_model=ExecutionResult)
 def execute(
-    db: Session, bq: BigQueryGateway, settings: Settings, user: User, body: QueryIn
+    body: QueryIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    bq: BigQueryGateway = Depends(get_bigquery),
+    settings: Settings = Depends(get_settings),
 ) -> ExecutionResult:
     issues, meta = _analyse(bq, body)
     if meta is None or any(i.severity == "error" for i in issues):
@@ -130,7 +164,7 @@ def execute(
             f"plafond {settings.max_bytes_billed / 1e9:.0f} Go (maximumBytesBilled).",
             "BYTES_LIMIT",
         )
-    usage = budget(db, settings, user)
+    usage = _budget(db, settings, user)
     if usage.bytes_used + meta.bytes_processed > usage.budget_bytes:
         raise ApiError(
             429, "Budget mensuel de scan atteint : exécution bloquée jusqu'au mois prochain.", "BUDGET"

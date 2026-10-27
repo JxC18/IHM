@@ -3,9 +3,8 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import get_settings
-from app.errors import ApiError, api_error_handler
-from app.routers import audit, performance, query, rules, session
+from app import auth, pilotage, query, rules
+from app.core import ApiError, api_error_handler, get_settings
 
 
 def create_app() -> FastAPI:
@@ -26,8 +25,8 @@ def create_app() -> FastAPI:
             allow_headers=["*"],
         )
 
-    for r in (session.router, rules.router, query.router, performance.router, audit.router):
-        app.include_router(r)
+    for module in (auth, rules, query, pilotage):
+        app.include_router(module.router)
 
     @app.get("/healthz", include_in_schema=False)
     def healthz():

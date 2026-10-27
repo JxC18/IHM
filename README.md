@@ -11,10 +11,17 @@ sans passer par le mail, et mesure leur efficacité grâce au retour du prestata
 │   ├── src/api/         contrat d'API (client.ts, types.ts) + implémentation mock pour la démo
 │   ├── src/pages/       écrans (liste, éditeur, détail, vue production, audit, profil)
 │   └── nginx/           conf Nginx : sert la SPA et relaie /api vers l'API
-├── backend/             Python 3.12 + FastAPI — l'API
-│   ├── app/auth.py      point UNIQUE de résolution de l'identité (get_current_user)
-│   ├── app/routers/     endpoints HTTP (mêmes chemins que frontend/src/api/client.ts)
-│   ├── app/services/    métier : règles & versions, test de requête, BigQuery, registre, audit
+├── backend/             Python 3.12 + FastAPI — l'API, un fichier par domaine (routes + logique)
+│   ├── app/main.py      création de l'application, branchement des routes
+│   ├── app/core.py      configuration (variables RM_*), erreurs, horloge
+│   ├── app/database.py  connexion PostgreSQL, tables, écriture du journal d'audit
+│   ├── app/schemas.py   formats JSON échangés avec le front
+│   ├── app/auth.py      identification par matricule ; point UNIQUE de résolution de l'identité
+│   ├── app/rules.py     règles : liste, création, versions, soumission (F1, F4, F5)
+│   ├── app/query.py     test d'une requête : dry-run, exécution, garde-fous, budget (F3)
+│   ├── app/sql_checks.py contrôles du SQL non couverts par BigQuery (paramètres, @run_date…)
+│   ├── app/pilotage.py  indicateurs de performance et journal d'audit, en lecture (F6, F7, F8)
+│   ├── app/bigquery.py  tout l'accès BigQuery (réel ou factice), dont la publication dans rules_registry
 │   ├── migrations/      Alembic (PostgreSQL / Cloud SQL)
 │   └── tests/           pytest (SQLite en mémoire + BigQuery factice)
 ├── infra/
@@ -189,13 +196,13 @@ navigateur ──► front (Nginx, Cloud Run) ──/api──► API FastAPI (C
 - Le front ne détient aucun credential BigQuery ; il ne parle qu'à l'API, sur la même origine (cookie de session first-party).
 - Les garde-fous de test (`maximumBytesBilled`, `jobTimeoutMs`, `maxResults`, budget) sont appliqués par l'API.
 - Les lignes renvoyées par un test ne sont jamais persistées ni journalisées : seules les métadonnées le sont.
-- L'identité (matricule) est résolue en un seul point, `backend/app/auth.py` ; le front la relit toujours via `/me`.
+- L'identité (matricule) est résolue en un seul point, `get_current_user` dans `backend/app/auth.py` ; le front la relit toujours via `/me`.
   Passer au SSO (PRD §5.4) revient à réécrire `get_current_user`.
 
 ## Décisions prises dans ce squelette — à valider
 
 - **Q1, base applicative** : PostgreSQL (recommandation du PRD §8.3). L'exposition à l'équipe data se fait par
-  `rules_registry` dans BigQuery, alimentée à l'écriture (`services/registry.py`, mode `real`). Si vous choisissez
+  `rules_registry` dans BigQuery, alimentée à l'écriture (`publish_rule` dans `backend/app/bigquery.py`, mode `real`). Si vous choisissez
   une vue fédérée `EXTERNAL_QUERY`, cette synchronisation devient inutile.
 - **Statuts posés par l'équipe data** (VALIDATED, IN_PRODUCTION…) : le PRD prévoit une écriture directe en base.
   Avec PostgreSQL comme source de vérité, l'équipe data doit écrire dans `rule_versions` (pas dans BigQuery),
