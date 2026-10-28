@@ -260,8 +260,8 @@ export function RuleEditorPage() {
         {flash === 'saved' && !dirty && <Alert kind="success" title="Brouillon enregistré. Vous seul le voyez ; reprenez-le quand vous voulez depuis « Mes brouillons »." />}
         {flash === 'withdrawn' && !dirty && (
           <Alert kind="success" title="Soumission retirée : la version est redevenue votre brouillon.">
-            Elle est sortie de <span className="mono">rules_registry</span> (Airflow ne peut plus la prendre) et l'équipe data est prévenue. Testez-la
-            puis soumettez-la à nouveau.
+            La ligne de la règle dans <span className="mono">rules_registry</span> est revenue à la version précédente (Airflow ne peut plus prendre
+            celle-ci) et l'équipe data est prévenue. Testez-la puis soumettez-la à nouveau.
           </Alert>
         )}
         {flash?.startsWith('restored:') && !dirty && (
@@ -291,8 +291,8 @@ export function RuleEditorPage() {
         )}
         {rule && withdraws && (
           <Alert kind="info" title={`Vous avez soumis la v${rule.version}, qu'Airflow n'a pas encore exécutée : vous pouvez la reprendre.`}>
-            L'enregistrement la retire de <span className="mono">rules_registry</span> (Airflow ne peut donc plus la prendre), prévient l'équipe data et
-            en refait votre brouillon personnel. Il faudra la retester puis la soumettre à nouveau ; elle gardera le numéro v{rule.version}.
+            L'enregistrement ramène la ligne de la règle dans <span className="mono">rules_registry</span> à la version précédente (Airflow ne peut donc
+            plus prendre celle-ci), prévient l'équipe data et en refait votre brouillon personnel. Il faudra la retester puis la soumettre à nouveau ; elle gardera le numéro v{rule.version}.
           </Alert>
         )}
         {rule && !withdraws && (

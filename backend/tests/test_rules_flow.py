@@ -43,7 +43,7 @@ def test_parcours_complet_brouillon_test_soumission(client, bq):
     rule = r.json()
     assert (rule["ruleId"], rule["version"], rule["status"]) == (rid, 1, "SUBMITTED")
     assert rule["submittedByName"] == "Camille Martin"
-    assert bq.published == [(rid, 1, "SUBMITTED")]  # le brouillon n'a jamais été publié
+    assert bq.registry == {rid: (1, "SUBMITTED")}  # le brouillon n'a jamais été publié
     assert client.get("/drafts").json() == []  # le brouillon est devenu la v1
 
     # Les tests du brouillon suivent la version ; les lignes ne sont jamais persistées.
@@ -56,7 +56,7 @@ def test_parcours_complet_brouillon_test_soumission(client, bq):
     d = client.post("/drafts", json={**RULE, "description": "v1 corrigée", "ruleId": rid}).json()
     assert (d["withdrawn"], d["ruleId"], d["newRule"]) == (True, rid, True)
     # Elle sort de rules_registry (Airflow ne peut plus la prendre) et du référentiel.
-    assert bq.published[-1] == (rid, 1, "RETIRÉE")
+    assert rid not in bq.registry
     assert client.get(f"/rules/{rid}").status_code == 404
     # Ses tests l'ont suivie : description seule modifiée, la requête testée est toujours valable.
     assert client.post(f"/drafts/{d['id']}/submit").json()["version"] == 1
@@ -218,13 +218,16 @@ def test_statuts_deduits_des_runs_airflow(client, bq):
     _submit(client, {**RULE, "sqlQuery": SQL + "\n  AND o.item_count > 1"}, rid)
     d = client.get(f"/rules/{rid}").json()
     assert (d["status"], d["productionVersion"]) == ("SUBMITTED", 1)
+    # Même ligne dans rules_registry, mise à jour : Airflow lira la v2 au prochain run.
+    assert bq.registry == {rid: (2, "SUBMITTED")}
 
     # La v2 démarre : la v1 est remplacée.
     bq.stats.append(RunStats(rid, 2, now, now, "fraud_rule_v2"))
     client.post("/internal/sync-runs")
     d = client.get(f"/rules/{rid}").json()
     assert [v["status"] for v in d["versions"]] == ["IN_PRODUCTION", "REPLACED"]
-    assert bq.published[-2:] == [(rid, 1, "REPLACED"), (rid, 2, "IN_PRODUCTION")]
+    # rules_registry : une seule ligne pour la règle, mise à jour avec la v2.
+    assert bq.registry == {rid: (2, "IN_PRODUCTION")}
 
 
 def test_version_qui_a_tourne_reste_figee(client, bq):
@@ -261,3 +264,16 @@ def test_performance_par_version(client, bq):
         (1, 40, 6),
         (2, 10, 5),
     ]
+
+
+def test_reprise_d_une_v2_remet_la_v1_dans_rules_registry(client, bq):
+    login(client)
+    rid = _submit(client)
+    now = datetime.now(UTC)
+    bq.stats = [RunStats(rid, 1, now, now, "fraud_rule_v1")]
+    client.post("/internal/sync-runs")
+    _submit(client, {**RULE, "description": "v2"}, rid)
+    assert bq.registry == {rid: (2, "SUBMITTED")}
+    # La v2 n'a jamais tourné : son auteur la reprend, la ligne revient à la v1 qui tourne toujours.
+    client.post("/drafts", json={**RULE, "description": "v2 corrigée", "ruleId": rid})
+    assert bq.registry == {rid: (1, "IN_PRODUCTION")}

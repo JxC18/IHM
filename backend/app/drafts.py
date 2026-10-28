@@ -25,7 +25,7 @@ from app.rules import (
     name_free,
     name_key,
     notify_data_team,
-    publish,
+    sync_registry,
     users_by_matricule,
     validate,
     withdrawable,
@@ -162,10 +162,9 @@ def create_draft(
     _adopt_tests(db, user, d)
     db.commit()
     if withdrawn and rule:
-        # Elle sort de rules_registry : Airflow ne peut plus la prendre.
-        bq.unpublish_rule(rule.rule_id, withdrawn.version)
-        if rule.versions:
-            publish(bq, rule, *rule.versions)  # la version précédente n'est plus « remplacée »
+        # La ligne de rules_registry revient à la version précédente (ou disparaît s'il n'y en a pas) :
+        # Airflow ne peut plus prendre la version retirée.
+        sync_registry(bq, rule)
         notify_data_team(
             "RULE_SUBMISSION_WITHDRAWN", rule.rule_id, withdrawn.version, withdrawn.name, user.matricule
         )
@@ -256,7 +255,7 @@ def submit_draft(
     except IntegrityError as e:  # course entre deux soumissions : l'unicité est garantie par la base
         db.rollback()
         raise ApiError(409, f"Une règle nommée « {v.name} » existe déjà.", "NAME_TAKEN") from e
-    # Les versions précédentes peuvent passer « Remplacée » : on les republie aussi.
-    publish(bq, rule, *rule.versions)
+    # La ligne de la règle dans rules_registry passe à cette version : Airflow l'exécute au run suivant.
+    sync_registry(bq, rule)
     notify_data_team("RULE_SUBMITTED", rule.rule_id, number, v.name, user.matricule)
     return detail(db, rule, user)

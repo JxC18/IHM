@@ -16,7 +16,7 @@ from functools import lru_cache
 from typing import Any, Protocol
 
 from app.core import Settings, get_settings
-from app.database import RuleVersion
+from app.database import Rule, RuleVersion
 from app.schemas import Column, DailyPerformance, RuleRun, VersionPerformance
 
 log = logging.getLogger(__name__)
@@ -87,12 +87,13 @@ class BigQueryGateway(Protocol):
 
     def run_stats(self) -> list[RunStats]: ...
 
-    def publish_rule(self, v: RuleVersion, owner_matricule: str, status: str) -> None:
-        """Écrit une version soumise dans `rules_registry` (création ou mise à jour) avec son statut."""
+    def upsert_rule(self, rule: Rule, v: RuleVersion, status: str) -> None:
+        """Écrit dans `rules_registry` la version à exécuter de la règle : une ligne par règle,
+        insérée à la première soumission puis mise à jour (UPDATE) à chaque nouvelle version."""
         ...
 
-    def unpublish_rule(self, rule_id: str, version: int) -> None:
-        """Retire de `rules_registry` une version soumise que l'analyste a reprise en brouillon."""
+    def delete_rule(self, rule_id: str) -> None:
+        """Retire la règle de `rules_registry` (sa seule version soumise a été reprise en brouillon)."""
         ...
 
 
@@ -236,15 +237,14 @@ class RealBigQueryGateway:
         )
         return [RunStats(**r) for r in rows]
 
-    def unpublish_rule(self, rule_id: str, version: int) -> None:
-        P = self._bq.ScalarQueryParameter
+    def delete_rule(self, rule_id: str) -> None:
         cfg = self._bq.QueryJobConfig(
-            query_parameters=[P("rule_id", "STRING", rule_id), P("version", "INT64", version)]
+            query_parameters=[self._bq.ScalarQueryParameter("rule_id", "STRING", rule_id)]
         )
-        sql = f"DELETE FROM {self.ds}.rules_registry WHERE rule_id = @rule_id AND version = @version"
+        sql = f"DELETE FROM {self.ds}.rules_registry WHERE rule_id = @rule_id"
         self.client.query(sql, job_config=cfg).result()
 
-    def publish_rule(self, v: RuleVersion, owner_matricule: str, status: str) -> None:
+    def upsert_rule(self, rule: Rule, v: RuleVersion, status: str) -> None:
         P = self._bq.ScalarQueryParameter
         params = [
             P("rule_id", "STRING", v.rule_id),
@@ -256,18 +256,20 @@ class RealBigQueryGateway:
             P("schedule", "STRING", v.schedule),
             P("sql_query", "STRING", v.sql_query),
             P("status", "STRING", status),
-            P("owner_matricule", "STRING", owner_matricule),
-            P("created_at", "TIMESTAMP", v.created_at),
+            P("owner_matricule", "STRING", rule.owner_matricule),
+            P("created_at", "TIMESTAMP", rule.created_at),
             P("updated_at", "TIMESTAMP", v.updated_at),
         ]
+        # Clé : rule_id seul. Une nouvelle version remplace la précédente dans la ligne ; l'historique
+        # des versions reste dans la base de la plateforme (rule_versions).
         sql = f"""
         MERGE {self.ds}.rules_registry t
-        USING (SELECT @rule_id AS rule_id, @version AS version) s
-        ON t.rule_id = s.rule_id AND t.version = s.version
+        USING (SELECT @rule_id AS rule_id) s
+        ON t.rule_id = s.rule_id
         WHEN MATCHED THEN UPDATE SET
-          name = @name, description = @description, fraud_typology = @fraud_typology,
-          criticality = @criticality, schedule = @schedule, sql_query = @sql_query,
-          status = @status, updated_at = @updated_at
+          version = @version, name = @name, description = @description,
+          fraud_typology = @fraud_typology, criticality = @criticality, schedule = @schedule,
+          sql_query = @sql_query, status = @status, updated_at = @updated_at
         WHEN NOT MATCHED THEN INSERT
           (rule_id, version, name, description, fraud_typology, criticality, schedule, sql_query,
            status, owner_matricule, created_at, updated_at)
@@ -299,7 +301,8 @@ class FakeBigQueryGateway:
     next_dry_run: DryRunMeta | None = None
     next_error: QueryError | None = None
     performance: dict[str, list[DailyPerformance]] = field(default_factory=dict)
-    published: list[tuple[str, int, str]] = field(default_factory=list)
+    # Contenu simulé de rules_registry : rule_id → (version, statut).
+    registry: dict[str, tuple[int, str]] = field(default_factory=dict)
     stats: list[RunStats] = field(default_factory=list)
 
     def dry_run(self, sql, run_date):
@@ -365,13 +368,13 @@ class FakeBigQueryGateway:
     def run_stats(self):
         return list(self.stats)
 
-    def publish_rule(self, v, owner_matricule, status):
+    def upsert_rule(self, rule, v, status):
         log.info("rules_registry ← %s v%s (%s)", v.rule_id, v.version, status)
-        self.published.append((v.rule_id, v.version, status))
+        self.registry[v.rule_id] = (v.version, status)
 
-    def unpublish_rule(self, rule_id, version):
-        log.info("rules_registry ✕ %s v%s", rule_id, version)
-        self.published.append((rule_id, version, "RETIRÉE"))
+    def delete_rule(self, rule_id):
+        log.info("rules_registry ✕ %s", rule_id)
+        self.registry.pop(rule_id, None)
 
 
 @lru_cache

@@ -421,7 +421,7 @@ export function createMockApi(): Api {
         if (myDraftFor(r.ruleId, u)) throw new ApiError(409, 'Vous avez déjà un brouillon pour cette règle.', 'DRAFT_EXISTS');
         const cur = current(r);
         if (withdrawable(r, u)) {
-          // Soumise mais jamais exécutée : elle quitte le référentiel (et rules_registry) et redevient un brouillon.
+          // Soumise mais jamais exécutée : elle redevient un brouillon ; la ligne rules_registry revient à la version précédente.
           withdrawn = true;
           d.baseVersion = r.versions.length > 1 ? r.versions[r.versions.length - 2].version : undefined;
           d.createdAt = cur.createdAt;

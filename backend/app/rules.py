@@ -196,10 +196,17 @@ def validate(db: Session, bq: BigQueryGateway, data: RuleInput, rule_id: str | N
         )
 
 
-def publish(bq: BigQueryGateway, rule: Rule, *versions: RuleVersion) -> None:
-    """Met à jour `rules_registry` (versions soumises uniquement : les brouillons n'y vont jamais)."""
-    for v in versions:
-        bq.publish_rule(v, rule.owner_matricule, derive_status(rule, v))
+def sync_registry(bq: BigQueryGateway, rule: Rule) -> None:
+    """Aligne la ligne de la règle dans `rules_registry` sur sa dernière version soumise.
+
+    Une ligne par règle, mise à jour à chaque soumission : c'est la requête qu'Airflow exécute au
+    run suivant. L'historique des versions reste dans `rule_versions` ; les brouillons n'y vont jamais.
+    """
+    if rule.versions:
+        cur = rule.versions[-1]
+        bq.upsert_rule(rule, cur, derive_status(rule, cur))
+    else:
+        bq.delete_rule(rule.rule_id)
 
 
 def sync_runs(db: Session, bq: BigQueryGateway) -> int:
@@ -222,9 +229,9 @@ def sync_runs(db: Session, bq: BigQueryGateway) -> int:
             v.first_run_at, v.last_run_at, v.airflow_dag_id = s.first_run_at, s.last_run_at, s.dag_id
             touched[v.rule_id] = v.rule
     db.commit()
-    # Une version qui démarre peut en remplacer une autre : on republie toute la règle.
+    # Le statut de la version courante a pu changer (en production, inactive).
     for rule in touched.values():
-        publish(bq, rule, *rule.versions)
+        sync_registry(bq, rule)
     return len(touched)
 
 

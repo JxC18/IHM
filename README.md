@@ -202,7 +202,9 @@ navigateur ──► front (Nginx, Cloud Run) ──/api──► API FastAPI (C
 ## Décisions prises dans ce squelette — à valider
 
 - **Q1, base applicative** : PostgreSQL (recommandation du PRD §8.3). L'exposition à l'équipe data se fait par
-  `rules_registry` dans BigQuery, alimentée à l'écriture (`publish_rule` dans `backend/app/bigquery.py`, mode `real`). Si vous choisissez
+  `rules_registry` dans BigQuery, alimentée à l'écriture (`upsert_rule` dans `backend/app/bigquery.py`, mode `real`).
+  **Une ligne par règle**, mise à jour à chaque soumission (MERGE sur `rule_id`) : l'historique des versions vit
+  dans `rule_versions`, côté plateforme. Si vous choisissez
   une vue fédérée `EXTERNAL_QUERY`, cette synchronisation devient inutile.
 - **Cycle de vie (écart au PRD F5 et §4.2)** : l'équipe data n'agit pas sur la plateforme. Seuls les gestes de
   l'analyste sont stockés (brouillon, soumission) ; le reste se **déduit des exécutions Airflow** dans `rule_runs` :
@@ -220,15 +222,15 @@ navigateur ──► front (Nginx, Cloud Run) ──/api──► API FastAPI (C
   signale le décalage. La saisie non encore enregistrée est en plus gardée dans le navigateur.
 
   Une version **soumise mais jamais exécutée** peut être reprise par celui qui l'a soumise : elle sort de
-  `rule_versions` et de `rules_registry`, redevient son brouillon, l'équipe data est prévenue
+  `rule_versions`, la ligne de `rules_registry` revient à la version précédente (ou est supprimée s'il n'y en
+  a pas), elle redevient son brouillon, l'équipe data est prévenue
   (`RULE_SUBMISSION_WITHDRAWN`), puis elle doit être retestée et resoumise (même numéro). Dès qu'une version a
   tourné, elle est figée : toute modification passe par un brouillon de nouvelle version.
 
   **Contrat côté Airflow, à valider avec l'équipe data** : le DAG ne recopie pas la requête, il l'exécute telle
-  qu'il la trouve dans `rules_registry`. Comme la table garde une ligne par version, il prend la **dernière
-  version soumise** de sa règle, identifiée par son `rule_id` (le nom est modifiable) : c'est le filtre que
-  fait la vue `v_rules_active` (`infra/bigquery/05_v_rules_active.sql`). Il écrit dans `rule_runs` la version
-  qu'il a exécutée : c'est ce qui permet à la plateforme d'afficher quelle version tourne. Une nouvelle version soumise tourne donc dès le
+  qu'il la trouve dans `rules_registry`, sur la ligne de sa règle identifiée par son `rule_id` (le nom est
+  modifiable) : c'est toujours la **dernière version soumise**. Il écrit dans `rule_runs` la version
+  qu'il a exécutée (colonne `version` de la ligne lue) : c'est ce qui permet à la plateforme d'afficher quelle version tourne. Une nouvelle version soumise tourne donc dès le
   run suivant, sans action de l'équipe data, qui n'intervient que pour créer le DAG d'une nouvelle règle. Les
   brouillons ne sont jamais exécutés. Toutes les versions restent conservées dans la plateforme : comparatif
   SQL, comparaison des performances par version (repères sur les courbes, tableau par version) et
