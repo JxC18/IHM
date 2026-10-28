@@ -8,7 +8,7 @@ import { KpiTile } from './KpiTile';
 import { LineChart, versionColor, type Point } from './LineChart';
 import { Alert, Spinner } from './ui';
 
-type Preset = 7 | 30 | 90 | 'custom';
+type Preset = 7 | 30 | 90 | 'all' | 'custom';
 
 /** Remplit les jours sans ligne (aucune version en production) par des trous. */
 function fill(from: string, to: string, rows: DailyPerformance[]) {
@@ -18,12 +18,22 @@ function fill(from: string, to: string, rows: DailyPerformance[]) {
   return out;
 }
 
-export function PerformanceDashboard({ ruleId, everInProduction }: { ruleId: string; everInProduction: boolean }) {
+interface Props {
+  ruleId: string;
+  /** Date du tout premier run Airflow de la règle (absente : jamais exécutée). */
+  firstRunDate?: string;
+  /** Nombre de versions qui ont tourné : à partir de 2, l'historique complet est affiché d'emblée pour les comparer. */
+  versionsRun: number;
+}
+
+export function PerformanceDashboard({ ruleId, firstRunDate, versionsRun }: Props) {
   const today = isoDate(new Date());
-  const [preset, setPreset] = useState<Preset>(30);
+  const [preset, setPreset] = useState<Preset>(versionsRun > 1 ? 'all' : 30);
   const [custom, setCustom] = useState({ from: addDays(today, -59), to: today });
-  const from = preset === 'custom' ? custom.from : addDays(today, -(preset - 1));
+  const from =
+    preset === 'custom' ? custom.from : preset === 'all' ? (firstRunDate ?? addDays(today, -29)) : addDays(today, -(preset - 1));
   const to = preset === 'custom' ? custom.to : today;
+  const everInProduction = !!firstRunDate;
   const validRange = from <= to;
 
   const perf = useAsync(() => (validRange ? api.getPerformance(ruleId, from, to) : Promise.resolve(undefined)), [ruleId, from, to]);
@@ -81,6 +91,9 @@ export function PerformanceDashboard({ ruleId, everInProduction }: { ruleId: str
               {p} jours
             </button>
           ))}
+          <button type="button" aria-pressed={preset === 'all'} onClick={() => setPreset('all')} title="Depuis le premier run de la v1 : toutes les versions sur la même courbe">
+            Tout l'historique
+          </button>
           <button type="button" aria-pressed={preset === 'custom'} onClick={() => setPreset('custom')}>
             Personnalisée
           </button>
@@ -321,7 +334,11 @@ function VersionComparison({ versions }: { versions: VersionPerformance[] }) {
                         {Math.abs(d * 100).toFixed(1).replace('.', ',')} pts)
                       </span>
                     )}
-                    {r.lowSample && <div className="small" style={{ color: 'var(--warn)' }}>⚠ échantillon faible</div>}
+                    {r.ordersFlagged === 0 ? (
+                      <div className="small" style={{ color: 'var(--bad)' }}>✕ aucune remontée : requête à vérifier</div>
+                    ) : (
+                      r.lowSample && <div className="small" style={{ color: 'var(--warn)' }}>⚠ échantillon faible</div>
+                    )}
                   </td>
                 </tr>
               );

@@ -37,7 +37,7 @@ export interface MockDb {
   usage: Record<string, Record<string, number>>;
 }
 
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 const daysAgo = (n: number, h = 10) => {
   const d = new Date();
@@ -121,6 +121,8 @@ WHERE o.order_date = @run_date
   AND TIMESTAMP_DIFF(o.created_at, c.account_created_at, HOUR) < 24`,
 };
 const R1_V1_SQL = R1.sql.replace('>= 500', '>= 300');
+// v3 : on écarte les comptes dont l'e-mail a été vérifié, sources de faux positifs.
+const R1_V3_SQL = R1.sql + '\n  AND NOT c.email_verified';
 
 const R2: Def = {
   id: '7f3c2a10-5b1e-4c8a-9d21-0a1b2c3d4e02',
@@ -143,6 +145,9 @@ WHERE o.order_date = @run_date
   AND d.country != a.country
   AND o.amount_eur >= 150`,
 };
+
+// v2 : seuil abaissé à 100 €, départements d'outre-mer exclus (adresses de facturation métropolitaines légitimes).
+const R2_V2_SQL = R2.sql.replace('>= 150', '>= 100') + `\n  AND a.country NOT IN ('GP', 'MQ', 'GF', 'RE', 'YT')`;
 
 const R3: Def = {
   id: '7f3c2a10-5b1e-4c8a-9d21-0a1b2c3d4e03',
@@ -181,6 +186,13 @@ WHERE o.order_date = @run_date
   AND TIMESTAMP_DIFF(o.created_at, c.email_changed_at, MINUTE) BETWEEN 0 AND 120`,
 };
 
+// v2 : fenêtre élargie à 3 h… mais les arguments de TIMESTAMP_DIFF sont inversés : l'écart est toujours
+// négatif et la règle ne remonte plus rien depuis sa mise en production (régression visible dans le comparatif).
+const R4_V2_SQL = R4.sql.replace(
+  'TIMESTAMP_DIFF(o.created_at, c.email_changed_at, MINUTE) BETWEEN 0 AND 120',
+  'TIMESTAMP_DIFF(c.email_changed_at, o.created_at, MINUTE) BETWEEN 0 AND 180',
+);
+
 const R5: Def = {
   id: '7f3c2a10-5b1e-4c8a-9d21-0a1b2c3d4e05',
   owner: '118870',
@@ -204,6 +216,8 @@ FROM \`sales.orders\` o
 JOIN usages u USING (promo_code, shipping_address_id)
 WHERE u.nb_comptes >= 3`,
 };
+
+const R5_V2_SQL = R5.sql.replace('>= 3', '>= 2');
 
 const R6: Def = {
   id: '7f3c2a10-5b1e-4c8a-9d21-0a1b2c3d4e06',
@@ -278,12 +292,17 @@ function passedTest(r: RuleVersion, at: number, by: string, i: number): TestReco
 
 export function buildSeed(): MockDb {
   // Versions soumises : leur statut affiché se déduit des runs Airflow simulés.
-  const r1v1 = v({ ...R1, sql: R1_V1_SQL }, 1, 160, { submittedAt: daysAgo(159), airflowDagId: 'fraud_rule_compte_recent_v1' });
-  const r1v2 = v(R1, 2, 75, { submittedAt: daysAgo(74), airflowDagId: 'fraud_rule_compte_recent_v2' });
-  const r2v1 = v(R2, 1, 120, { submittedAt: daysAgo(119), airflowDagId: 'fraud_rule_livraison_pays' });
+  // Le DAG d'une règle ne change pas d'une version à l'autre : il lit la ligne de la règle dans rules_registry.
+  const r1v1 = v({ ...R1, sql: R1_V1_SQL }, 1, 160, { airflowDagId: 'fraud_rule_compte_recent' });
+  const r1v2 = v(R1, 2, 95, { airflowDagId: 'fraud_rule_compte_recent' });
+  const r1v3 = v({ ...R1, sql: R1_V3_SQL }, 3, 40, { airflowDagId: 'fraud_rule_compte_recent' });
+  const r2v1 = v(R2, 1, 120, { airflowDagId: 'fraud_rule_livraison_pays' });
+  const r2v2 = v({ ...R2, sql: R2_V2_SQL }, 2, 62, { airflowDagId: 'fraud_rule_livraison_pays' });
   const r3v1 = v(R3, 1, 95, { submittedAt: daysAgo(94), airflowDagId: 'fraud_rule_tentatives_paiement' });
-  const r4v1 = v(R4, 1, 140, { submittedAt: daysAgo(139), airflowDagId: 'fraud_rule_changement_email' });
-  const r5v1 = v(R5, 1, 6, { submittedAt: daysAgo(5) });
+  const r4v1 = v(R4, 1, 140, { airflowDagId: 'fraud_rule_changement_email' });
+  const r4v2 = v({ ...R4, sql: R4_V2_SQL }, 2, 43, { airflowDagId: 'fraud_rule_changement_email' });
+  const r5v1 = v(R5, 1, 70, { airflowDagId: 'fraud_rule_promo_comptes_lies' });
+  const r5v2 = v({ ...R5, sql: R5_V2_SQL }, 2, 6, { submittedAt: daysAgo(5) });
   const r6v1 = v(R6, 1, 12, { submittedAt: daysAgo(11) });
   const r7v1 = v(R7, 1, 20, { submittedAt: daysAgo(19) });
   // Brouillons personnels de Camille Martin : une nouvelle version de R3, une nouvelle règle.
@@ -295,20 +314,22 @@ export function buildSeed(): MockDb {
   const rules: MockRule[] = [
     {
       ruleId: R1.id,
-      versions: [r1v1, r1v2],
-      productionSince: { 1: daysAgo(150).slice(0, 10), 2: daysAgo(70).slice(0, 10) },
-      productionUntil: { 1: daysAgo(71).slice(0, 10) },
-      profile: { dailyVolume: 32, processingRate: 0.82, precision: 0.36 },
-      // v1 au seuil de 300 € : plus de remontées, moins précises.
-      versionProfiles: { 1: { dailyVolume: 61, precision: 0.19 } },
+      versions: [r1v1, r1v2, r1v3],
+      productionSince: { 1: daysAgo(150).slice(0, 10), 2: daysAgo(92).slice(0, 10), 3: daysAgo(38).slice(0, 10) },
+      productionUntil: { 1: daysAgo(93).slice(0, 10), 2: daysAgo(39).slice(0, 10) },
+      profile: { dailyVolume: 24, processingRate: 0.82, precision: 0.44 },
+      // Chaque version resserre la règle : moins de remontées, plus précises.
+      versionProfiles: { 1: { dailyVolume: 61, precision: 0.19 }, 2: { dailyVolume: 34, precision: 0.31 } },
     },
     {
       ruleId: R2.id,
-      versions: [r2v1],
-      productionSince: { 1: daysAgo(115).slice(0, 10) },
+      versions: [r2v1, r2v2],
+      productionSince: { 1: daysAgo(115).slice(0, 10), 2: daysAgo(58).slice(0, 10) },
       // Plus aucun run depuis 5 jours : la règle apparaît « inactive ».
-      productionUntil: { 1: daysAgo(5).slice(0, 10) },
-      profile: { dailyVolume: 14, processingRate: 0.9, precision: 0.58 },
+      productionUntil: { 1: daysAgo(59).slice(0, 10), 2: daysAgo(5).slice(0, 10) },
+      // v2 au seuil de 100 € : plus de volume, un peu moins précise.
+      profile: { dailyVolume: 22, processingRate: 0.9, precision: 0.47 },
+      versionProfiles: { 1: { dailyVolume: 14, precision: 0.58 } },
     },
     {
       ruleId: R3.id,
@@ -319,23 +340,35 @@ export function buildSeed(): MockDb {
     },
     {
       ruleId: R4.id,
-      versions: [r4v1],
-      productionSince: { 1: daysAgo(135).slice(0, 10) },
-      productionUntil: {},
-      profile: { dailyVolume: 6, processingRate: 0.95, precision: 0.71, brokenSinceDays: 41 },
+      versions: [r4v1, r4v2],
+      productionSince: { 1: daysAgo(135).slice(0, 10), 2: daysAgo(41).slice(0, 10) },
+      productionUntil: { 1: daysAgo(42).slice(0, 10) },
+      profile: { dailyVolume: 6, processingRate: 0.95, precision: 0.71, brokenSinceDays: 42 },
     },
-    { ruleId: R5.id, versions: [r5v1], productionSince: {}, productionUntil: {} },
+    {
+      // v1 en production, v2 soumise : Airflow la prendra au prochain run hebdomadaire.
+      ruleId: R5.id,
+      versions: [r5v1, r5v2],
+      productionSince: { 1: daysAgo(65).slice(0, 10) },
+      productionUntil: {},
+      profile: { dailyVolume: 3, processingRate: 0.85, precision: 0.52 },
+    },
     { ruleId: R6.id, versions: [r6v1], productionSince: {}, productionUntil: {} },
     { ruleId: R7.id, versions: [r7v1], productionSince: {}, productionUntil: {} },
   ];
 
   const tests: TestRecord[] = [
     passedTest(r1v1, 161, '104233', 0),
-    passedTest(r1v2, 76, '104233', 1),
+    passedTest(r1v2, 96, '104233', 1),
+    passedTest(r1v3, 41, '104233', 11),
     passedTest(r2v1, 121, '118870', 2),
+    passedTest(r2v2, 63, '118870', 12),
     passedTest(r3v1, 96, '104233', 3),
     passedTest(r4v1, 141, '120415', 4),
-    passedTest(r5v1, 6, '118870', 5),
+    // Le test de la v2 « réussit » mais ne remonte rien : le signal était là avant la mise en production.
+    { ...passedTest(r4v2, 44, '120415', 14), totalRows: 0 },
+    passedTest(r5v1, 71, '118870', 5),
+    passedTest(r5v2, 6, '118870', 15),
     passedTest(r6v1, 12, '120415', 6),
     passedTest(r7v1, 20, '104233', 7),
     {

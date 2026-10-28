@@ -37,7 +37,8 @@ export function RuleDetailPage() {
   const r = rule.data;
 
   const hash = queryHash(r.sqlQuery);
-  const everInProduction = r.versions.some((v) => !!v.firstRunAt);
+  const ran = r.versions.filter((v) => !!v.firstRunAt);
+  const firstRunDate = ran.map((v) => v.firstRunAt!.slice(0, 10)).sort()[0];
 
   /** Ouvre l'onglet Définition et fait défiler jusqu'au bloc de test. */
   function showTest() {
@@ -130,7 +131,7 @@ export function RuleDetailPage() {
 
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
         {tab === 'definition' && <DefinitionTab r={r} onTested={rule.reload} />}
-        {tab === 'performance' && <PerformanceDashboard ruleId={r.ruleId} everInProduction={everInProduction} />}
+        {tab === 'performance' && <PerformanceDashboard ruleId={r.ruleId} firstRunDate={firstRunDate} versionsRun={ran.length} />}
         {tab === 'tests' && <TestsTab r={r} hash={hash} />}
         {tab === 'versions' && (
           <VersionsTab
