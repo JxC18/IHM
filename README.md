@@ -65,6 +65,8 @@ Vérification : `node -v` (22.x ou plus) et `python --version` / `python3 --vers
 git clone -b claude/rules-manager-prd-oldfut https://github.com/jxc18/ihm.git
 cd ihm
 ```
+Sans Git : télécharger https://github.com/JxC18/IHM/archive/refs/heads/claude/rules-manager-prd-oldfut.zip,
+le décompresser et ouvrir un terminal dans le dossier `IHM-claude-rules-manager-prd-oldfut`.
 
 ### 3a. Voir l'interface seule (données simulées)
 
@@ -133,7 +135,7 @@ cd ../backend
   si on le rouvre.
 - En local, BigQuery est simulé : un test de requête répond toujours « 6 Go, 5 lignes » et les tableaux de
   performance sont vides. Pour le vrai BigQuery : accès GCP et `RM_BIGQUERY_MODE=real`.
-- Le panneau « Simulation équipe data » (valider, mettre en production…) n'existe qu'en mode démo (3a).
+- Le panneau « Simulation Airflow » (premiers runs d'une version soumise, arrêt du DAG) n'existe qu'en mode démo (3a).
 
 ### Dépannage : « npm is not recognized » (Windows)
 
