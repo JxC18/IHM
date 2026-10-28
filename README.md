@@ -25,7 +25,7 @@ sans passer par le mail, et mesure leur efficacité grâce au retour du prestata
 │   ├── migrations/      Alembic (PostgreSQL / Cloud SQL)
 │   └── tests/           pytest (SQLite en mémoire + BigQuery factice)
 ├── infra/
-│   ├── bigquery/        contrat de données §7 : rules_registry, rule_runs, rule_alerts, v_rule_performance
+│   ├── bigquery/        contrat de données §7 : rules_registry, rule_runs, rule_alerts (+ details), v_rule_performance
 │   └── cloudbuild.yaml  build → Artifact Registry → Cloud Run (+ job de migration)
 ├── docker-compose.yml   environnement local complet (PostgreSQL + API + front)
 ├── .github/workflows/   CI : typecheck, tests, lint, migrations sur PostgreSQL, build des images
@@ -237,6 +237,23 @@ navigateur ──► front (Nginx, Cloud Run) ──/api──► API FastAPI (C
   brouillons ne sont jamais exécutés. Toutes les versions restent conservées dans la plateforme : comparatif
   SQL, comparaison des performances par version (repères sur les courbes, tableau par version) et
   **restauration** d'une version antérieure, recopiée dans un brouillon à tester puis soumettre.
+
+  Pour chaque commande remontée, le DAG écrit une ligne dans `rule_alerts`. Chaque règle renvoie ses
+  propres colonnes ; seule `order_id` est obligatoire (vérifiée à la soumission) et sert aux indicateurs.
+  Le reste de la ligne va dans la colonne **`details`** (JSON, facultative), pour que l'équipe qui traite
+  les alertes sache pourquoi la commande a été remontée. Exemple d'écriture en une requête :
+  ```sql
+  INSERT INTO `projet.fraud_rules.rule_alerts`
+    (rule_id, rule_version, run_id, run_date, order_id, detected_at, details)
+  SELECT @rule_id, @rule_version, @run_id, @run_date,
+         CAST(t.order_id AS STRING), CURRENT_TIMESTAMP(),
+         TO_JSON(t)                 -- toute la ligne de résultat (order_id compris)
+  FROM (
+    /* sql_query lue dans rules_registry ; @run_date fourni par le DAG */
+  ) AS t
+  ```
+  Une table `rule_alerts` créée avant l'ajout de `details` est mise à jour par
+  `infra/bigquery/06_rule_alerts_details.sql` (rejoué sans risque par `apply.sh`).
 
   Les statuts « Validée » et « Refusée » disparaissent : un refus passe hors plateforme et l'analyste soumet
   une nouvelle version (risque R3 : le motif n'est pas tracé). L'état des runs est recopié par
