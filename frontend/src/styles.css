@@ -41,8 +41,8 @@
   --radius: 8px;
   --radius-sm: 5px;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 8px rgba(0, 0, 0, 0.04);
-  --font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --mono: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace;
+  --font: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -143,15 +143,15 @@ h3 {
 }
 h1 {
   font-size: 22px;
-  font-weight: 650;
+  font-weight: 600;
 }
 h2 {
   font-size: 16px;
-  font-weight: 650;
+  font-weight: 600;
 }
 h3 {
   font-size: 14px;
-  font-weight: 650;
+  font-weight: 600;
 }
 code,
 pre {
@@ -245,7 +245,7 @@ main {
 }
 .crumb-link {
   color: var(--text-2);
-  font-weight: 550;
+  font-weight: 500;
   text-decoration: none;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
@@ -338,7 +338,7 @@ main {
   background: var(--surface);
   color: var(--text);
   font: inherit;
-  font-weight: 550;
+  font-weight: 500;
   cursor: pointer;
   text-decoration: none;
   white-space: nowrap;
@@ -841,7 +841,7 @@ table.data tr:last-child td {
 }
 .kpi-value {
   font-size: 30px;
-  font-weight: 650;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
 }
@@ -928,7 +928,7 @@ table.data tr:last-child td {
 .chart .marker text {
   fill: var(--text-2);
   font-size: 11px;
-  font-weight: 650;
+  font-weight: 600;
 }
 .chart .crosshair {
   stroke: var(--text-3);
@@ -1240,7 +1240,7 @@ details summary {
 .nav a.active {
   background: var(--accent-soft);
   color: var(--accent);
-  font-weight: 650;
+  font-weight: 600;
 }
 .sidebar-demo {
   font-size: 12px;
@@ -1444,7 +1444,7 @@ details summary {
   padding: 10px 20px;
   border-top: 1px solid var(--border);
   font-size: 13px;
-  font-weight: 550;
+  font-weight: 500;
   color: var(--accent);
   text-decoration: none;
 }
@@ -1507,7 +1507,7 @@ details summary {
 }
 .status-count {
   text-align: right;
-  font-weight: 650;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
