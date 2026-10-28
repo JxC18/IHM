@@ -6,8 +6,9 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-# DRAFT et SUBMITTED : gestes de l'analyste. Les autres sont déduits des exécutions Airflow.
-RuleStatus = Literal["DRAFT", "SUBMITTED", "IN_PRODUCTION", "INACTIVE", "REPLACED"]
+# Statut d'une version de règle (toujours soumise : les brouillons sont à part, voir DraftOut).
+# SUBMITTED : geste de l'analyste. Les autres sont déduits des exécutions Airflow.
+RuleStatus = Literal["SUBMITTED", "IN_PRODUCTION", "INACTIVE", "REPLACED"]
 Criticality = Literal["HIGH", "MEDIUM", "LOW"]
 Schedule = Literal["DAILY", "HOURLY", "WEEKLY"]
 
@@ -49,6 +50,7 @@ class TestRecord(Model):
     id: str
     rule_id: str | None = None
     version: int | None = None
+    draft_id: str | None = None
     query_hash: str
     at: datetime
     by_matricule: str
@@ -68,9 +70,11 @@ class RuleVersionOut(RuleInput):
     status: RuleStatus
     owner_matricule: str
     owner_name: str
+    submitted_by: str
+    submitted_by_name: str
     created_at: datetime
     updated_at: datetime
-    submitted_at: datetime | None = None
+    submitted_at: datetime
     airflow_dag_id: str | None = None
     first_run_at: datetime | None = None
     last_run_at: datetime | None = None
@@ -85,6 +89,28 @@ class RuleSummary(RuleVersionOut):
 class RuleDetail(RuleSummary):
     versions: list[RuleVersionOut]
     tests: list[TestRecord]
+    # Propres à l'utilisateur connecté.
+    my_draft_id: str | None = None  # son brouillon de nouvelle version, s'il en a un
+    can_withdraw: bool = False  # il a soumis la dernière version et Airflow ne l'a jamais exécutée
+
+
+class DraftIn(RuleInput):
+    rule_id: str | None = None  # règle existante dont on prépare une nouvelle version
+
+
+class DraftOut(RuleInput):
+    """Brouillon personnel (visible de son seul auteur)."""
+
+    id: str
+    rule_id: str
+    base_version: int | None = None
+    new_rule: bool  # la règle n'existe pas encore dans le référentiel
+    latest_version: int | None = None  # dernière version soumise de la règle, pour signaler un décalage
+    withdrawn: bool = False  # vient d'être créé en retirant une soumission
+    created_at: datetime
+    updated_at: datetime
+    last_test: TestRecord | None = None
+    tests: list[TestRecord] = []
 
 
 class NameAvailable(Model):
@@ -108,6 +134,7 @@ class BudgetUsage(Model):
 class QueryIn(Model):
     sql: str
     rule_id: str | None = None
+    draft_id: str | None = None
 
 
 class SqlIssue(Model):

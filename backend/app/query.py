@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.bigquery import BigQueryGateway, BytesLimitExceeded, QueryError, get_bigquery
 from app.core import ApiError, Settings, get_settings, now
-from app.database import Rule, TestRun, User, get_db, record_audit
+from app.database import Draft, Rule, RuleVersion, TestRun, User, get_db, record_audit
 from app.schemas import BudgetUsage, DryRunResult, ExecutionResult, Guardrails, QueryIn, SqlIssue
 from app.sql_checks import check_hardcoded_dates, check_params, query_hash
 
@@ -40,14 +40,32 @@ def _budget(db: Session, settings: Settings, user: User) -> BudgetUsage:
     )
 
 
-def _record(db: Session, user: User, body: QueryIn, **fields) -> TestRun:
-    rule = db.get(Rule, body.rule_id) if body.rule_id else None
-    if body.rule_id and rule is None:
-        raise ApiError(404, "Règle introuvable.")
+Target = tuple[RuleVersion | None, Draft | None]
+
+
+def _target(db: Session, user: User, body: QueryIn) -> Target:
+    """Ce qui est testé : un brouillon (privé), la dernière version d'une règle, ou une requête libre.
+    Résolu avant tout appel à BigQuery."""
+    if body.draft_id:
+        draft = db.get(Draft, body.draft_id)
+        if draft is None or draft.matricule != user.matricule:
+            raise ApiError(404, "Brouillon introuvable.")
+        return None, draft
+    if body.rule_id:
+        rule = db.get(Rule, body.rule_id)
+        if rule is None or not rule.versions:
+            raise ApiError(404, "Règle introuvable.")
+        return rule.versions[-1], None
+    return None, None
+
+
+def _record(db: Session, user: User, body: QueryIn, target: Target, **fields) -> TestRun:
+    cur, draft = target
     run = TestRun(
         id=str(uuid.uuid4()),
-        rule_id=rule.rule_id if rule else None,
-        version=rule.versions[-1].version if rule else None,
+        rule_id=cur.rule_id if cur else None,
+        version=cur.version if cur else None,
+        draft_id=draft.id if draft else None,
         query_hash=query_hash(body.sql),
         at=now(),
         by_matricule=user.matricule,
@@ -56,7 +74,8 @@ def _record(db: Session, user: User, body: QueryIn, **fields) -> TestRun:
     db.add(run)
     phase = "Exécution échantillonnée" if fields["phase"] == "EXECUTION" else "Dry-run"
     outcome = "réussi" if fields["success"] else f"en échec : {fields.get('error') or ''}"
-    record_audit(db, user, "RULE_TEST", rule.versions[-1] if rule else None, f"{phase} {outcome}")
+    # Un brouillon est privé : le journal garde le test (volume scanné) sans nommer la règle.
+    record_audit(db, user, "RULE_TEST", cur, f"{phase} {outcome}" + (" (brouillon)" if draft else ""))
     db.commit()
     return run
 
@@ -120,6 +139,7 @@ def dry_run(
     bq: BigQueryGateway = Depends(get_bigquery),
     settings: Settings = Depends(get_settings),
 ) -> DryRunResult:
+    target = _target(db, user, body)
     issues, meta = _analyse(bq, body)
     ok = meta is not None and not any(i.severity == "error" for i in issues)
     cost = (meta.bytes_processed / 1e12) * settings.cost_per_tb_eur if meta else None
@@ -128,6 +148,7 @@ def dry_run(
         db,
         user,
         body,
+        target,
         phase="DRY_RUN",
         success=ok,
         bytes_processed=meta.bytes_processed if meta else None,
@@ -155,6 +176,7 @@ def execute(
     bq: BigQueryGateway = Depends(get_bigquery),
     settings: Settings = Depends(get_settings),
 ) -> ExecutionResult:
+    target = _target(db, user, body)
     issues, meta = _analyse(bq, body)
     if meta is None or any(i.severity == "error" for i in issues):
         raise ApiError(422, "Le dry-run doit réussir avant toute exécution.")
@@ -173,16 +195,17 @@ def execute(
     try:
         res = bq.execute(body.sql, _test_run_date())
     except BytesLimitExceeded as e:
-        _record(db, user, body, phase="EXECUTION", success=False, error=str(e))
+        _record(db, user, body, target, phase="EXECUTION", success=False, error=str(e))
         raise ApiError(422, "Exécution interrompue : plafond de volume scanné atteint.", "BYTES_LIMIT") from e
     except QueryError as e:
-        _record(db, user, body, phase="EXECUTION", success=False, error=e.message)
+        _record(db, user, body, target, phase="EXECUTION", success=False, error=e.message)
         raise ApiError(422, e.message, "BIGQUERY") from e
     # Seules les métadonnées sont persistées ; les lignes ne quittent pas la réponse (PRD §10).
     run = _record(
         db,
         user,
         body,
+        target,
         phase="EXECUTION",
         success=True,
         bytes_processed=res.bytes_processed,

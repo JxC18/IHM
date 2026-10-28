@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api } from '../api/client';
-import type { DryRunResult, ExecutionResult, SqlIssue } from '../api/types';
+import type { DryRunResult, ExecutionResult, SqlIssue, TestTarget } from '../api/types';
 import { useAsync } from '../lib/useAsync';
 import { addDays, fmtBytes, fmtDuration, fmtEur, fmtInt, fmtLongDate, isoDate } from '../lib/format';
 import { queryHash } from '../lib/sql';
@@ -8,7 +8,8 @@ import { Alert, Spinner } from './ui';
 
 interface Props {
   sql: string;
-  ruleId?: string;
+  /** Brouillon ou règle testée ; absent : test libre (rattaché au brouillon à son premier enregistrement). */
+  target?: TestTarget;
   onIssues: (issues: SqlIssue[]) => void;
   onGoTo: (line: number, column?: number) => void;
   /** Appelé après chaque test (pour rafraîchir l'historique / l'éligibilité à la soumission). */
@@ -19,7 +20,7 @@ interface Props {
 
 type Phase = 'idle' | 'dry-running' | 'dry-done' | 'executing' | 'exec-done';
 
-export function TestPanel({ sql, ruleId, onIssues, onGoTo, onTested, onExecuted }: Props) {
+export function TestPanel({ sql, target, onIssues, onGoTo, onTested, onExecuted }: Props) {
   const guard = useAsync(() => api.getGuardrails(), []);
   const budget = useAsync(() => api.getBudget(), []);
   const [phase, setPhase] = useState<Phase>('idle');
@@ -38,7 +39,7 @@ export function TestPanel({ sql, ruleId, onIssues, onGoTo, onTested, onExecuted 
     setExec(undefined);
     setError(undefined);
     try {
-      const r = await api.dryRun(sql, ruleId);
+      const r = await api.dryRun(sql, target);
       setDry(r);
       setTestedHash(hash);
       onIssues(r.issues);
@@ -55,7 +56,7 @@ export function TestPanel({ sql, ruleId, onIssues, onGoTo, onTested, onExecuted 
     setPhase('executing');
     setError(undefined);
     try {
-      setExec(await api.execute(sql, ruleId));
+      setExec(await api.execute(sql, target));
       setPhase('exec-done');
       onExecuted?.(hash);
       budget.reload();

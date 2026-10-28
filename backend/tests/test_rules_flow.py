@@ -19,60 +19,120 @@ RULE = {
 }
 
 
-def test_parcours_complet_creation_test_soumission(client, bq):
+def test_parcours_complet_brouillon_test_soumission(client, bq):
     login(client)
-    rule = client.post("/rules", json=RULE).json()
-    rid = rule["ruleId"]
-    assert rule["status"] == "DRAFT" and rule["version"] == 1
+    d = client.post("/drafts", json=RULE).json()
+    did, rid = d["id"], d["ruleId"]
+    assert d["newRule"] is True and d["baseVersion"] is None
+    # Tant qu'elle n'est pas soumise, la règle n'est pas dans le référentiel partagé.
+    assert client.get("/rules").json() == []
+    assert client.get(f"/rules/{rid}").status_code == 404
 
     # Soumission refusée sans test.
-    r = client.post(f"/rules/{rid}/submit")
+    r = client.post(f"/drafts/{did}/submit")
     assert r.status_code == 409 and r.json()["code"] == "TEST_REQUIRED"
 
-    dry = client.post("/query/dry-run", json={"sql": SQL, "ruleId": rid}).json()
+    dry = client.post("/query/dry-run", json={"sql": SQL, "draftId": did}).json()
     assert dry["ok"] is True, dry["issues"]
-    ex = client.post("/query/execute", json={"sql": SQL, "ruleId": rid}).json()
+    ex = client.post("/query/execute", json={"sql": SQL, "draftId": did}).json()
     assert ex["ok"] is True and ex["totalRows"] == 5
+    assert client.get(f"/drafts/{did}").json()["lastTest"]["phase"] == "EXECUTION"
 
-    r = client.post(f"/rules/{rid}/submit")
+    r = client.post(f"/drafts/{did}/submit")
     assert r.status_code == 200, r.text
-    assert r.json()["status"] == "SUBMITTED"
+    rule = r.json()
+    assert (rule["ruleId"], rule["version"], rule["status"]) == (rid, 1, "SUBMITTED")
+    assert rule["submittedByName"] == "Camille Martin"
     assert bq.published == [(rid, 1, "SUBMITTED")]  # le brouillon n'a jamais été publié
+    assert client.get("/drafts").json() == []  # le brouillon est devenu la v1
 
-    # Soumise mais jamais exécutée par Airflow : modifiable sur place, elle repasse en brouillon.
-    r = client.put(f"/rules/{rid}", json={**RULE, "description": "v1 corrigée"}).json()
-    assert (r["version"], r["status"], r["versionCount"]) == (1, "DRAFT", 1)
-    # Elle sort de rules_registry : Airflow ne peut plus la prendre.
-    assert bq.published[-1] == (rid, 1, "RETIRÉE")
-
-    # Les lignes ne sont jamais persistées : seules les métadonnées apparaissent.
-    tests = client.get(f"/rules/{rid}").json()["tests"]
-    assert {t["phase"] for t in tests} == {"DRY_RUN", "EXECUTION"}
+    # Les tests du brouillon suivent la version ; les lignes ne sont jamais persistées.
+    tests = rule["tests"]
+    assert {t["phase"] for t in tests} == {"DRY_RUN", "EXECUTION"} and all(t["version"] == 1 for t in tests)
     assert all("rows" not in t for t in tests)
 
+    # Soumise mais jamais exécutée par Airflow : son auteur peut la reprendre, elle redevient son brouillon.
+    assert rule["canWithdraw"] is True
+    d = client.post("/drafts", json={**RULE, "description": "v1 corrigée", "ruleId": rid}).json()
+    assert (d["withdrawn"], d["ruleId"], d["newRule"]) == (True, rid, True)
+    # Elle sort de rules_registry (Airflow ne peut plus la prendre) et du référentiel.
+    assert bq.published[-1] == (rid, 1, "RETIRÉE")
+    assert client.get(f"/rules/{rid}").status_code == 404
+    # Ses tests l'ont suivie : description seule modifiée, la requête testée est toujours valable.
+    assert client.post(f"/drafts/{d['id']}/submit").json()["version"] == 1
+
     actions = [e["action"] for e in client.get("/audit", params={"ruleId": rid}).json()]
-    assert {"RULE_CREATE", "RULE_TEST", "RULE_SUBMIT", "RULE_UPDATE"} <= set(actions)
+    assert actions.count("RULE_SUBMIT") == 2 and "RULE_WITHDRAW" in actions
+
+
+def test_brouillon_invisible_des_collegues(client):
+    login(client)
+    did = client.post("/drafts", json=RULE).json()["id"]
+    client.post("/query/execute", json={"sql": SQL, "draftId": did})
+    login(client, "200001", "Sacha", "Bernard")
+    assert client.get("/drafts").json() == []
+    assert client.get(f"/drafts/{did}").status_code == 404
+    assert client.put(f"/drafts/{did}", json=RULE).status_code == 404
+    assert client.post(f"/drafts/{did}/submit").status_code == 404
+    assert client.post("/query/execute", json={"sql": SQL, "draftId": did}).status_code == 404
+    # Le journal garde la trace du test (volume scanné) sans rien dire du brouillon.
+    ev = [e for e in client.get("/audit").json() if e["action"] == "RULE_TEST"]
+    assert ev and all(e["ruleId"] is None and e["ruleName"] is None for e in ev)
+
+
+def test_nouvelle_version_en_brouillon_ne_change_pas_la_regle_pour_les_autres(client, bq):
+    login(client)
+    rid = _submit(client)
+    now = datetime.now(UTC)
+    bq.stats = [RunStats(rid, 1, now, now, "fraud_rule_v1")]
+    client.post("/internal/sync-runs")
+    d = client.post("/drafts", json={**RULE, "description": "seuil revu", "ruleId": rid}).json()
+    assert (d["baseVersion"], d["withdrawn"], d["latestVersion"]) == (1, False, 1)
+    assert client.get(f"/rules/{rid}").json()["myDraftId"] == d["id"]
+    # Un seul brouillon par règle et par personne.
+    r = client.post("/drafts", json={**RULE, "ruleId": rid})
+    assert r.status_code == 409 and r.json()["code"] == "DRAFT_EXISTS"
+
+    login(client, "200001", "Sacha", "Bernard")
+    rule = client.get(f"/rules/{rid}").json()
+    assert (rule["versionCount"], rule["description"], rule["myDraftId"]) == (1, RULE["description"], None)
+    assert rule["canWithdraw"] is False
+    # Un collègue peut préparer sa propre version en parallèle ; la première soumise prend la v2.
+    other = client.post("/drafts", json={**RULE, "description": "autre piste", "ruleId": rid}).json()
+    client.post("/query/execute", json={"sql": SQL, "draftId": other["id"]})
+    assert client.post(f"/drafts/{other['id']}/submit").json()["version"] == 2
+
+    login(client)
+    d = client.get(f"/drafts/{d['id']}").json()
+    assert (d["baseVersion"], d["latestVersion"]) == (1, 2)  # l'éditeur signale le décalage
+
+
+def test_suppression_d_un_brouillon(client):
+    login(client)
+    did = client.post("/drafts", json=RULE).json()["id"]
+    assert client.delete(f"/drafts/{did}").status_code == 204
+    assert client.get("/drafts").json() == []
 
 
 def test_test_sur_ancienne_requete_ne_permet_pas_la_soumission(client):
     login(client)
-    rid = client.post("/rules", json=RULE).json()["ruleId"]
-    client.post("/query/execute", json={"sql": SQL, "ruleId": rid})
-    client.put(f"/rules/{rid}", json={**RULE, "sqlQuery": SQL + "\n  AND o.item_count > 1"})
-    assert client.post(f"/rules/{rid}/submit").status_code == 409
+    did = client.post("/drafts", json=RULE).json()["id"]
+    client.post("/query/execute", json={"sql": SQL, "draftId": did})
+    client.put(f"/drafts/{did}", json={**RULE, "sqlQuery": SQL + "\n  AND o.item_count > 1"})
+    assert client.post(f"/drafts/{did}/submit").status_code == 409
 
 
 def test_tests_avant_premier_enregistrement_sont_rattaches(client):
     login(client)
     client.post("/query/execute", json={"sql": SQL})
-    rid = client.post("/rules", json=RULE).json()["ruleId"]
-    assert client.post(f"/rules/{rid}/submit").status_code == 200
+    did = client.post("/drafts", json=RULE).json()["id"]
+    assert client.post(f"/drafts/{did}/submit").status_code == 200
 
 
 def test_nom_unique_insensible_casse_et_accents(client):
     login(client)
-    client.post("/rules", json=RULE)
-    r = client.post("/rules", json={**RULE, "name": "PANIER ELEVE"})
+    _submit(client)
+    r = client.post("/drafts", json={**RULE, "name": "PANIER ELEVE"})
     assert r.status_code == 409 and r.json()["code"] == "NAME_TAKEN"
     assert client.get("/rules/name-available", params={"name": "panier élevé"}).json() == {"available": False}
 
@@ -80,7 +140,7 @@ def test_nom_unique_insensible_casse_et_accents(client):
 def test_dml_refuse_a_l_enregistrement(client, bq):
     login(client)
     bq.next_dry_run = DryRunMeta("DELETE", 0, [])
-    r = client.post("/rules", json={**RULE, "sqlQuery": "DELETE FROM `sales.orders` WHERE true"})
+    r = client.post("/drafts", json={**RULE, "sqlQuery": "DELETE FROM `sales.orders` WHERE true"})
     assert r.status_code == 422 and r.json()["code"] == "NOT_SELECT"
 
 
@@ -116,21 +176,20 @@ def test_budget_comptabilise_les_executions(client):
 
 def test_filtres_et_recherche(client):
     login(client)
-    client.post("/rules", json=RULE)
-    client.post(
-        "/rules", json={**RULE, "name": "Autre", "criticality": "LOW", "sqlQuery": SQL + " -- relais"}
-    )
+    _submit(client)
+    _submit(client, {**RULE, "name": "Autre", "criticality": "LOW", "sqlQuery": SQL + " -- relais"})
     assert len(client.get("/rules").json()) == 2
     assert [r["name"] for r in client.get("/rules", params={"criticality": "LOW"}).json()] == ["Autre"]
     assert [r["name"] for r in client.get("/rules", params={"q": "RELAIS"}).json()] == ["Autre"]
-    assert client.get("/rules", params={"status": "SUBMITTED"}).json() == []
+    assert client.get("/rules", params={"status": "IN_PRODUCTION"}).json() == []
 
 
-def _submit(client, rule=RULE):
-    rid = client.post("/rules", json=rule).json()["ruleId"]
-    client.post("/query/execute", json={"sql": rule["sqlQuery"], "ruleId": rid})
-    assert client.post(f"/rules/{rid}/submit").status_code == 200
-    return rid
+def _submit(client, rule=RULE, rule_id=None):
+    did = client.post("/drafts", json={**rule, "ruleId": rule_id}).json()["id"]
+    client.post("/query/execute", json={"sql": rule["sqlQuery"], "draftId": did})
+    r = client.post(f"/drafts/{did}/submit")
+    assert r.status_code == 200, r.text
+    return r.json()["ruleId"]
 
 
 def test_statuts_deduits_des_runs_airflow(client, bq):
@@ -156,9 +215,7 @@ def test_statuts_deduits_des_runs_airflow(client, bq):
     assert client.get("/performance/production").json()[0]["status"] == "INACTIVE"
 
     # Une v2 est soumise : la v1 tourne encore, elle reste visible comme version en production.
-    client.put(f"/rules/{rid}", json={**RULE, "sqlQuery": SQL + "\n  AND o.item_count > 1"})
-    client.post("/query/execute", json={"sql": SQL + "\n  AND o.item_count > 1", "ruleId": rid})
-    client.post(f"/rules/{rid}/submit")
+    _submit(client, {**RULE, "sqlQuery": SQL + "\n  AND o.item_count > 1"}, rid)
     d = client.get(f"/rules/{rid}").json()
     assert (d["status"], d["productionVersion"]) == ("SUBMITTED", 1)
 
@@ -176,8 +233,10 @@ def test_version_qui_a_tourne_reste_figee(client, bq):
     now = datetime.now(UTC)
     bq.stats = [RunStats(rid, 1, now, now, "fraud_rule_v1")]
     client.post("/internal/sync-runs")
-    r = client.put(f"/rules/{rid}", json={**RULE, "description": "seuil revu"}).json()
-    assert (r["version"], r["status"], r["productionVersion"]) == (2, "DRAFT", 1)
+    assert client.get(f"/rules/{rid}").json()["canWithdraw"] is False
+    d = client.post("/drafts", json={**RULE, "description": "seuil revu", "ruleId": rid}).json()
+    assert (d["withdrawn"], d["baseVersion"]) == (False, 1)
+    assert client.get(f"/rules/{rid}").json()["status"] == "IN_PRODUCTION"
 
 
 def test_performance_par_version(client, bq):

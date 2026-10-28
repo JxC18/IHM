@@ -205,17 +205,24 @@ navigateur ──► front (Nginx, Cloud Run) ──/api──► API FastAPI (C
   `rules_registry` dans BigQuery, alimentée à l'écriture (`publish_rule` dans `backend/app/bigquery.py`, mode `real`). Si vous choisissez
   une vue fédérée `EXTERNAL_QUERY`, cette synchronisation devient inutile.
 - **Cycle de vie (écart au PRD F5 et §4.2)** : l'équipe data n'agit pas sur la plateforme. Seuls les gestes de
-  l'analyste sont stockés (Brouillon, Soumise) ; le reste se **déduit des exécutions Airflow** dans `rule_runs` :
+  l'analyste sont stockés (brouillon, soumission) ; le reste se **déduit des exécutions Airflow** dans `rule_runs` :
   - *En production* : la version tourne (Airflow écrit `airflow_dag_id` dans `rule_runs`) ;
   - *Inactive depuis X* : plus de run depuis 3 périodes (3 h, 3 jours ou 3 semaines selon la fréquence) ;
     le statut redevient « En production » dès que les runs reprennent ;
   - *Remplacée* : une version plus récente a été soumise ou tourne à sa place.
 
-  Une version **soumise mais jamais exécutée** reste modifiable : elle repasse en brouillon (même numéro), sort de
-  `rules_registry`, l'équipe data est prévenue (`RULE_SUBMISSION_WITHDRAWN`), puis elle doit être retestée et
-  resoumise. **Les brouillons ne sont jamais écrits dans `rules_registry`** : ils restent dans la base de la
-  plateforme (partagés entre postes et collègues), la saisie non enregistrée étant, elle, gardée dans le navigateur. Dès qu'une version
-  a tourné, elle est figée et toute modification crée une nouvelle version.
+  **Brouillons personnels** : un brouillon est la sauvegarde de travail d'un analyste, stocké comme son profil
+  dans la base de la plateforme (table `drafts`, rattachée à son matricule) et **visible de lui seul** : ni les
+  collègues, ni le journal d'audit (un test de brouillon y est tracé sans nommer la règle), ni BigQuery ne le
+  voient. La table `rule_versions` ne contient que des versions soumises, et une règle n'entre dans le
+  référentiel partagé qu'à sa première soumission. Chacun peut préparer sa propre nouvelle version d'une règle
+  (un brouillon par règle et par personne) ; la première soumise prend le numéro suivant, l'éditeur des autres
+  signale le décalage. La saisie non encore enregistrée est en plus gardée dans le navigateur.
+
+  Une version **soumise mais jamais exécutée** peut être reprise par celui qui l'a soumise : elle sort de
+  `rule_versions` et de `rules_registry`, redevient son brouillon, l'équipe data est prévenue
+  (`RULE_SUBMISSION_WITHDRAWN`), puis elle doit être retestée et resoumise (même numéro). Dès qu'une version a
+  tourné, elle est figée : toute modification passe par un brouillon de nouvelle version.
 
   **Contrat côté Airflow, à valider avec l'équipe data** : le DAG ne recopie pas la requête, il l'exécute telle
   qu'il la trouve dans `rules_registry`. Comme la table garde une ligne par version, il prend la **dernière
@@ -225,7 +232,7 @@ navigateur ──► front (Nginx, Cloud Run) ──/api──► API FastAPI (C
   run suivant, sans action de l'équipe data, qui n'intervient que pour créer le DAG d'une nouvelle règle. Les
   brouillons ne sont jamais exécutés. Toutes les versions restent conservées dans la plateforme : comparatif
   SQL, comparaison des performances par version (repères sur les courbes, tableau par version) et
-  **restauration** d'une version antérieure, recopiée en nouvelle version à tester puis soumettre.
+  **restauration** d'une version antérieure, recopiée dans un brouillon à tester puis soumettre.
 
   Les statuts « Validée » et « Refusée » disparaissent : un refus passe hors plateforme et l'analyste soumet
   une nouvelle version (risque R3 : le motif n'est pas tracé). L'état des runs est recopié par

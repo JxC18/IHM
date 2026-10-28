@@ -4,7 +4,7 @@ import { useAuth } from '../auth/AuthContext';
 import { API_MODE } from '../api/client';
 import { usePref } from '../prefs/prefs';
 import { Initials } from './ui';
-import { IconAudit, IconChart, IconCollapse, IconHome, IconPlus, IconRules } from './icons';
+import { IconAudit, IconChart, IconCollapse, IconDraft, IconHome, IconPlus, IconRules } from './icons';
 
 function NavItem({ to, end, icon, label }: { to: string; end?: boolean; icon: ReactNode; label: string }) {
   return (
@@ -48,6 +48,7 @@ export function Layout() {
           <NavItem to="/" end icon={<IconHome />} label="Vue d'ensemble" />
           {/* Sans `end` : reste active sur la fiche, la modification et la création d'une règle. */}
           <NavItem to="/rules" icon={<IconRules />} label="Règles" />
+          <NavItem to="/drafts" icon={<IconDraft />} label="Mes brouillons" />
           <NavItem to="/production" icon={<IconChart />} label="Production" />
           <NavItem to="/audit" icon={<IconAudit />} label="Journal d'audit" />
         </nav>

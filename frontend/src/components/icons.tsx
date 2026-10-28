@@ -27,6 +27,12 @@ export const IconRules = () => (
     <circle cx="4.5" cy="18" r="1.2" />
   </svg>
 );
+export const IconDraft = () => (
+  <svg {...base}>
+    <path d="M14 4H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5" />
+    <path d="M17.5 3.5a1.8 1.8 0 0 1 2.5 2.5L13 13l-3.2.8.8-3.2z" />
+  </svg>
+);
 export const IconPlus = () => (
   <svg {...base}>
     <path d="M12 5v14M5 12h14" />

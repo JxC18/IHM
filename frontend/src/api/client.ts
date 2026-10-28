@@ -1,5 +1,6 @@
 import type {
   AuditEvent,
+  Draft,
   BudgetUsage,
   ConsolidatedRow,
   DryRunResult,
@@ -10,6 +11,7 @@ import type {
   RuleFilters,
   RuleInput,
   RuleSummary,
+  TestTarget,
   User,
 } from './types';
 import { ApiError } from './types';
@@ -31,19 +33,27 @@ export interface Api {
   // F1 / F5
   listRules(filters: RuleFilters): Promise<RuleSummary[]>;
   getRule(ruleId: string): Promise<RuleDetail>;
-  createRule(input: RuleInput): Promise<RuleDetail>;
-  /** DRAFT : modification en place. Autre statut : nouvelle version en DRAFT. */
-  updateRule(ruleId: string, input: RuleInput): Promise<RuleDetail>;
   checkNameAvailable(name: string, excludeRuleId?: string): Promise<boolean>;
+
+  // Brouillons personnels (visibles de leur seul auteur)
+  listDrafts(): Promise<Draft[]>;
+  getDraft(draftId: string): Promise<Draft>;
+  /**
+   * Nouvelle règle, ou nouvelle version de `ruleId`. Si l'utilisateur a soumis la dernière version
+   * et qu'Airflow ne l'a jamais exécutée, elle est retirée et redevient son brouillon.
+   */
+  createDraft(input: RuleInput & { ruleId?: string }): Promise<Draft>;
+  updateDraft(draftId: string, input: RuleInput): Promise<Draft>;
+  deleteDraft(draftId: string): Promise<void>;
 
   // F3
   getGuardrails(): Promise<Guardrails>;
   getBudget(): Promise<BudgetUsage>;
-  dryRun(sql: string, ruleId?: string): Promise<DryRunResult>;
-  execute(sql: string, ruleId?: string): Promise<ExecutionResult>;
+  dryRun(sql: string, target?: TestTarget): Promise<DryRunResult>;
+  execute(sql: string, target?: TestTarget): Promise<ExecutionResult>;
 
-  // F4
-  submitRule(ruleId: string): Promise<RuleDetail>;
+  // F4 : le brouillon devient une version de la règle (créée dans le référentiel si besoin).
+  submitDraft(draftId: string): Promise<RuleDetail>;
 
   // F6 / F7
   getPerformance(ruleId: string, from: string, to: string): Promise<PerformanceResponse>;
@@ -99,15 +109,18 @@ export function createHttpApi(): Api {
     listUsers: () => http('GET', '/users'),
     listRules: (f) => http('GET', `/rules${qs({ ...f })}`),
     getRule: (id) => http('GET', `/rules/${id}`),
-    createRule: (input) => http('POST', '/rules', input),
-    updateRule: (id, input) => http('PUT', `/rules/${id}`, input),
     checkNameAvailable: async (name, excludeRuleId) =>
       (await http<{ available: boolean }>('GET', `/rules/name-available${qs({ name, exclude: excludeRuleId })}`)).available,
+    listDrafts: () => http('GET', '/drafts'),
+    getDraft: (id) => http('GET', `/drafts/${id}`),
+    createDraft: (input) => http('POST', '/drafts', input),
+    updateDraft: (id, input) => http('PUT', `/drafts/${id}`, input),
+    deleteDraft: (id) => http('DELETE', `/drafts/${id}`),
     getGuardrails: () => http('GET', '/config/guardrails'),
     getBudget: () => http('GET', '/me/budget'),
-    dryRun: (sql, ruleId) => http('POST', '/query/dry-run', { sql, ruleId }),
-    execute: (sql, ruleId) => http('POST', '/query/execute', { sql, ruleId }),
-    submitRule: (id) => http('POST', `/rules/${id}/submit`),
+    dryRun: (sql, target) => http('POST', '/query/dry-run', { sql, ...target }),
+    execute: (sql, target) => http('POST', '/query/execute', { sql, ...target }),
+    submitDraft: (id) => http('POST', `/drafts/${id}/submit`),
     getPerformance: (id, from, to) => http('GET', `/rules/${id}/performance${qs({ from, to })}`),
     getConsolidated: () => http('GET', '/performance/production'),
     listAudit: (f) => http('GET', `/audit${qs(f)}`),

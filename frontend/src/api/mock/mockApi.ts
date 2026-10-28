@@ -7,6 +7,7 @@ import {
   ApiError,
   type AuditEvent,
   type DailyPerformance,
+  type Draft,
   type Guardrails,
   type RuleDetail,
   type RuleInput,
@@ -14,10 +15,11 @@ import {
   type RuleSummary,
   type RuleVersion,
   type TestRecord,
+  type TestTarget,
   type User,
   type VersionPerformance,
 } from '../types';
-import { buildSeed, SCHEMA_VERSION, type MockDb, type MockRule } from './seed';
+import { buildSeed, SCHEMA_VERSION, type MockDb, type MockDraft, type MockRule } from './seed';
 import { simulateDryRun, simulateExecution } from './bigquery';
 import { queryHash } from '../../lib/sql';
 import { addDays, isoDate } from '../../lib/format';
@@ -134,7 +136,6 @@ export function createMockApi(): Api {
   }
 
   function deriveStatus(r: MockRule, v: RuleVersion): RuleVersion['status'] {
-    if (v.status === 'DRAFT') return 'DRAFT';
     const newer = r.versions.filter((w) => w.version > v.version);
     if (newer.some((w) => r.productionSince[w.version] !== undefined)) return 'REPLACED';
     const run = withRuns(r, v);
@@ -142,7 +143,7 @@ export function createMockApi(): Api {
       const idleDays = (Date.now() - new Date(run.lastRunAt).getTime()) / 86400000;
       return idleDays > PERIOD_DAYS[v.schedule] * INACTIVE_AFTER_PERIODS ? 'INACTIVE' : 'IN_PRODUCTION';
     }
-    if (newer.some((w) => w.status === 'SUBMITTED')) return 'REPLACED';
+    if (newer.length) return 'REPLACED'; // une version plus récente a été soumise avant que celle-ci ne tourne
     return 'SUBMITTED';
   }
 
@@ -160,12 +161,44 @@ export function createMockApi(): Api {
     };
   }
 
-  function detail(r: MockRule): RuleDetail {
+  /** L'utilisateur a soumis la dernière version et Airflow ne l'a jamais exécutée : il peut la reprendre. */
+  const withdrawable = (r: MockRule, u: User) =>
+    current(r).submittedBy === u.matricule && r.productionSince[current(r).version] === undefined;
+  const myDraftFor = (ruleId: string, u: User) => db.drafts.find((d) => d.ruleId === ruleId && d.matricule === u.matricule);
+
+  function detail(r: MockRule, u: User): RuleDetail {
+    const mine = myDraftFor(r.ruleId, u);
     return {
       ...summary(r),
       versions: r.versions.map((v) => view(r, v)).reverse(),
       tests: db.tests.filter((t) => t.ruleId === r.ruleId).sort((a, b) => b.at.localeCompare(a.at)),
+      myDraftId: mine?.id,
+      canWithdraw: !mine && withdrawable(r, u),
     };
+  }
+
+  // ---------- brouillons personnels (même logique que backend/app/drafts.py) ----------
+  const draftTests = (id: string) => db.tests.filter((t) => t.draftId === id).sort((a, b) => b.at.localeCompare(a.at));
+
+  function draftOut(d: MockDraft, withdrawn = false): Draft {
+    const r = db.rules.find((x) => x.ruleId === d.ruleId);
+    const tests = draftTests(d.id);
+    const { matricule: _m, ...rest } = d;
+    void _m;
+    return { ...clone(rest), newRule: !r, latestVersion: r ? current(r).version : undefined, withdrawn, lastTest: tests[0], tests };
+  }
+
+  function findDraft(id: string, u: User): MockDraft {
+    const d = db.drafts.find((x) => x.id === id);
+    // Le brouillon d'un collègue n'existe pas pour vous.
+    if (!d || d.matricule !== u.matricule) throw new ApiError(404, 'Brouillon introuvable.');
+    return d;
+  }
+
+  const CONTENT = ['name', 'description', 'fraudTypology', 'criticality', 'schedule', 'sqlQuery'] as const;
+  function applyContent(target: RuleInput, input: RuleInput) {
+    for (const k of CONTENT) (target as unknown as Record<string, string>)[k] = input[k];
+    target.name = target.name.trim();
   }
 
   function validateInput(input: RuleInput, excludeRuleId?: string) {
@@ -265,12 +298,14 @@ export function createMockApi(): Api {
   const month = () => new Date().toISOString().slice(0, 7);
   const used = (m: string) => db.usage[m]?.[month()] ?? 0;
 
-  function recordTest(u: User, ruleId: string | undefined, sql: string, t: Partial<TestRecord> & Pick<TestRecord, 'phase' | 'success'>): TestRecord {
-    const r = ruleId ? findRule(ruleId) : undefined;
+  function recordTest(u: User, target: TestTarget | undefined, sql: string, t: Partial<TestRecord> & Pick<TestRecord, 'phase' | 'success'>): TestRecord {
+    const draft = target?.draftId ? findDraft(target.draftId, u) : undefined;
+    const cur = !draft && target?.ruleId ? current(findRule(target.ruleId)) : undefined;
     const rec: TestRecord = {
       id: uid(),
-      ruleId,
-      version: r ? current(r).version : undefined,
+      ruleId: cur?.ruleId,
+      version: cur?.version,
+      draftId: draft?.id,
       queryHash: queryHash(sql),
       at: now(),
       byMatricule: u.matricule,
@@ -278,12 +313,9 @@ export function createMockApi(): Api {
       ...t,
     };
     db.tests.push(rec);
-    audit(
-      u,
-      'RULE_TEST',
-      r ? current(r) : undefined,
-      `${t.phase === 'EXECUTION' ? 'Exécution échantillonnée' : 'Dry-run'} ${t.success ? 'réussi' : `en échec : ${t.error ?? ''}`}`,
-    );
+    // Un brouillon est privé : le journal garde le test (volume scanné) sans nommer la règle.
+    const outcome = `${t.phase === 'EXECUTION' ? 'Exécution échantillonnée' : 'Dry-run'} ${t.success ? 'réussi' : `en échec : ${t.error ?? ''}`}`;
+    audit(u, 'RULE_TEST', cur, draft ? `${outcome} (brouillon)` : outcome);
     save();
     return rec;
   }
@@ -361,78 +393,80 @@ export function createMockApi(): Api {
     },
     async getRule(id) {
       await delay();
-      currentUser();
-      return detail(findRule(id));
+      return detail(findRule(id), currentUser());
     },
-    async createRule(input) {
+
+    async listDrafts() {
       await delay();
       const u = currentUser();
-      validateInput(input);
-      const ruleId = uid();
-      const t = now();
-      const v: RuleVersion = {
-        ...clone(input),
-        name: input.name.trim(),
-        ruleId,
-        version: 1,
-        status: 'DRAFT',
-        ownerMatricule: u.matricule,
-        ownerName: fullName(u),
-        createdAt: t,
-        updatedAt: t,
-      };
-      db.rules.push({ ruleId, versions: [v], productionSince: {}, productionUntil: {} });
-      // Les tests lancés avant le premier enregistrement sont rattachés à la règle.
-      for (const test of db.tests) {
-        if (!test.ruleId && test.byMatricule === u.matricule && Date.now() - new Date(test.at).getTime() < 3600_000) {
-          test.ruleId = ruleId;
-          test.version = 1;
-        }
-      }
-      audit(u, 'RULE_CREATE', v);
-      save();
-      return detail(findRule(ruleId));
+      return db.drafts
+        .filter((d) => d.matricule === u.matricule)
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        .map((d) => draftOut(d));
     },
-    async updateRule(id, input) {
+    async getDraft(id) {
+      await delay();
+      return draftOut(findDraft(id, currentUser()));
+    },
+    async createDraft(input) {
       await delay();
       const u = currentUser();
-      const r = findRule(id);
-      validateInput(input, id);
-      const cur = current(r);
+      validateInput(input, input.ruleId);
       const t = now();
-      // Brouillon, ou version soumise jamais exécutée par Airflow : modification sur place.
-      const withdrawn = cur.status === 'SUBMITTED' && r.productionSince[cur.version] === undefined;
-      if (cur.status === 'DRAFT' || withdrawn) {
-        Object.assign(cur, clone(input), { name: input.name.trim(), updatedAt: t });
-        if (withdrawn) {
-          cur.status = 'DRAFT';
-          delete cur.submittedAt;
-        }
-        audit(u, 'RULE_UPDATE', cur, withdrawn ? "Soumission retirée pour modification (équipe data prévenue)" : undefined);
-      } else {
-        const v: RuleVersion = {
-          ...clone(input),
-          name: input.name.trim(),
-          ruleId: id,
-          version: cur.version + 1,
-          status: 'DRAFT',
-          ownerMatricule: cur.ownerMatricule,
-          ownerName: cur.ownerName,
-          createdAt: t,
-          updatedAt: t,
-        };
-        r.versions.push(v);
-        // Les tests lancés depuis l'éditeur portaient sur ce nouveau contenu : on les rattache à la nouvelle version.
-        const h = queryHash(v.sqlQuery);
-        for (const test of db.tests) {
-          if (test.ruleId === id && test.version === cur.version && test.queryHash === h && Date.now() - new Date(test.at).getTime() < 3600_000) {
-            test.version = v.version;
+      const d: MockDraft = { ...clone(input), id: uid(), matricule: u.matricule, ruleId: input.ruleId ?? uid(), createdAt: t, updatedAt: t };
+      applyContent(d, input);
+      let withdrawn = false;
+      if (input.ruleId) {
+        const r = findRule(input.ruleId);
+        if (myDraftFor(r.ruleId, u)) throw new ApiError(409, 'Vous avez déjà un brouillon pour cette règle.', 'DRAFT_EXISTS');
+        const cur = current(r);
+        if (withdrawable(r, u)) {
+          // Soumise mais jamais exécutée : elle quitte le référentiel (et rules_registry) et redevient un brouillon.
+          withdrawn = true;
+          d.baseVersion = r.versions.length > 1 ? r.versions[r.versions.length - 2].version : undefined;
+          d.createdAt = cur.createdAt;
+          audit(u, 'RULE_WITHDRAW', cur, 'Soumission retirée pour modification (équipe data prévenue)');
+          for (const test of db.tests) {
+            if (test.ruleId === r.ruleId && test.version === cur.version) {
+              test.draftId = d.id;
+              delete test.ruleId;
+              delete test.version;
+            }
           }
+          r.versions.pop();
+          if (!r.versions.length) db.rules = db.rules.filter((x) => x !== r);
+        } else {
+          d.baseVersion = cur.version;
         }
-        audit(u, 'RULE_NEW_VERSION', v, `Nouvelle version créée à partir de la v${cur.version} (${deriveStatus(r, cur)})`);
       }
+      // Les tests lancés avant le premier enregistrement sont rattachés au brouillon.
+      const h = queryHash(d.sqlQuery);
+      for (const test of db.tests) {
+        if (!test.ruleId && !test.draftId && test.byMatricule === u.matricule && test.queryHash === h && Date.now() - new Date(test.at).getTime() < 3600_000) {
+          test.draftId = d.id;
+        }
+      }
+      db.drafts.push(d);
       save();
-      return detail(r);
+      return draftOut(d, withdrawn);
+    },
+    async updateDraft(id, input) {
+      await delay();
+      const u = currentUser();
+      const d = findDraft(id, u);
+      validateInput(input, d.ruleId);
+      applyContent(d, input);
+      d.updatedAt = now();
+      save();
+      return draftOut(d);
+    },
+    async deleteDraft(id) {
+      await delay();
+      const d = findDraft(id, currentUser());
+      // Les tests restent (budget de scan), simplement détachés.
+      for (const t of db.tests) if (t.draftId === d.id) delete t.draftId;
+      db.drafts = db.drafts.filter((x) => x !== d);
+      save();
     },
     async checkNameAvailable(name, excludeRuleId) {
       await delay(40, 90);
@@ -448,13 +482,14 @@ export function createMockApi(): Api {
       const u = currentUser();
       return { month: month(), bytesUsed: used(u.matricule), budgetBytes: GUARDRAILS.monthlyBudgetBytes };
     },
-    async dryRun(sql, ruleId) {
+    async dryRun(sql, target) {
       await delay(400, 900);
       const u = currentUser();
+      if (target?.draftId) findDraft(target.draftId, u);
       const testId = uid();
       const res = simulateDryRun(sql, GUARDRAILS, testId);
       const firstError = res.issues.find((i) => i.severity === 'error');
-      const rec = recordTest(u, ruleId, sql, {
+      const rec = recordTest(u, target, sql, {
         phase: 'DRY_RUN',
         success: res.ok,
         bytesProcessed: res.bytesProcessed,
@@ -463,8 +498,9 @@ export function createMockApi(): Api {
       });
       return { ...res, testId: rec.id };
     },
-    async execute(sql, ruleId) {
+    async execute(sql, target) {
       const u = currentUser();
+      if (target?.draftId) findDraft(target.draftId, u);
       const dry = simulateDryRun(sql, GUARDRAILS, 'pre');
       if (!dry.ok) throw new ApiError(422, 'Le dry-run doit réussir avant toute exécution.');
       if (dry.exceedsBytesLimit) {
@@ -481,7 +517,7 @@ export function createMockApi(): Api {
       const res = simulateExecution(sql, GUARDRAILS, dry, 'exec');
       db.usage[u.matricule] = { ...db.usage[u.matricule], [month()]: used(u.matricule) + res.bytesProcessed };
       // Seules les métadonnées sont conservées, jamais les lignes (PRD §10).
-      const rec = recordTest(u, ruleId, sql, {
+      const rec = recordTest(u, target, sql, {
         phase: 'EXECUTION',
         success: true,
         bytesProcessed: res.bytesProcessed,
@@ -491,22 +527,48 @@ export function createMockApi(): Api {
       return { ...res, testId: rec.id };
     },
 
-    async submitRule(id) {
+    async submitDraft(id) {
       await delay();
       const u = currentUser();
-      const r = findRule(id);
-      const cur = current(r);
-      if (cur.status !== 'DRAFT') throw new ApiError(409, 'Seule une version en brouillon peut être soumise.');
-      const last = lastTestFor(id, cur.version);
-      if (!last || !last.success || last.phase !== 'EXECUTION' || last.queryHash !== queryHash(cur.sqlQuery)) {
-        throw new ApiError(409, 'Le dernier test doit être une exécution réussie portant sur la version courante de la requête.', 'TEST_REQUIRED');
+      const d = findDraft(id, u);
+      const last = draftTests(d.id)[0];
+      if (!last || !last.success || last.phase !== 'EXECUTION' || last.queryHash !== queryHash(d.sqlQuery)) {
+        throw new ApiError(409, 'Le dernier test doit être une exécution réussie portant sur la version actuelle de la requête.', 'TEST_REQUIRED');
       }
-      cur.status = 'SUBMITTED';
-      cur.submittedAt = now();
-      cur.updatedAt = cur.submittedAt;
-      audit(u, 'RULE_SUBMIT', cur, "Notification envoyée à l'équipe data (canal à arbitrer, PRD Q6)");
+      if (!nameAvailable(d.name, d.ruleId)) throw new ApiError(409, `Une règle nommée « ${d.name} » existe déjà.`, 'NAME_TAKEN');
+      let r = db.rules.find((x) => x.ruleId === d.ruleId);
+      if (!r) {
+        r = { ruleId: d.ruleId, versions: [], productionSince: {}, productionUntil: {} };
+        db.rules.push(r);
+      }
+      const owner = r.versions[0] ?? { ownerMatricule: u.matricule, ownerName: fullName(u) };
+      const t = now();
+      const v: RuleVersion = {
+        ...clone({ name: d.name, description: d.description, fraudTypology: d.fraudTypology, criticality: d.criticality, schedule: d.schedule, sqlQuery: d.sqlQuery }),
+        ruleId: d.ruleId,
+        version: r.versions.length ? current(r).version + 1 : 1,
+        status: 'SUBMITTED',
+        ownerMatricule: owner.ownerMatricule,
+        ownerName: owner.ownerName,
+        submittedBy: u.matricule,
+        submittedByName: fullName(u),
+        createdAt: d.createdAt,
+        updatedAt: t,
+        submittedAt: t,
+      };
+      r.versions.push(v);
+      for (const test of db.tests) {
+        if (test.draftId === d.id) {
+          test.ruleId = v.ruleId;
+          test.version = v.version;
+          delete test.draftId;
+        }
+      }
+      db.drafts = db.drafts.filter((x) => x !== d);
+      const origin = v.version === 1 ? 'Nouvelle règle' : `Nouvelle version (préparée à partir de la v${d.baseVersion})`;
+      audit(u, 'RULE_SUBMIT', v, `${origin} — notification envoyée à l'équipe data (canal à arbitrer, PRD Q6)`);
       save();
-      return detail(r);
+      return detail(r, u);
     },
 
     async getPerformance(id, from, to) {
@@ -562,7 +624,7 @@ export function createMockApi(): Api {
         await delay();
         const u = currentUser();
         const r = findRule(id);
-        const target = [...r.versions].reverse().find((v) => v.status === 'SUBMITTED' && r.productionSince[v.version] === undefined);
+        const target = [...r.versions].reverse().find((v) => r.productionSince[v.version] === undefined);
         if (!target) throw new ApiError(409, 'Aucune version soumise en attente de mise en production.');
         const today = isoDate(new Date());
         // La version qui tournait s'arrête : Airflow exécute désormais la dernière version soumise.
@@ -571,13 +633,12 @@ export function createMockApi(): Api {
         r.productionSince[target.version] = today;
         target.airflowDagId = `fraud_rule_${target.ruleId.slice(0, 8)}_v${target.version}`;
         r.profile ??= { dailyVolume: 10 + Math.round(rnd(id) * 40), processingRate: 0.75, precision: 0.2 + rnd(id + 'p') * 0.4 };
-        void u;
         save();
-        return detail(r);
+        return detail(r, u);
       },
       async simulateStop(id) {
         await delay();
-        currentUser();
+        const u = currentUser();
         const r = findRule(id);
         const run = running(r);
         if (!run) throw new ApiError(409, "Aucune version n'est exécutée par Airflow.");
@@ -587,7 +648,7 @@ export function createMockApi(): Api {
         // Le premier run doit précéder le dernier.
         if (r.productionSince[run.version] > until) r.productionSince[run.version] = addDays(until, -7);
         save();
-        return detail(r);
+        return detail(r, u);
       },
       async reset() {
         db = buildSeed();

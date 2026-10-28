@@ -15,6 +15,7 @@ export const ACTION_LABEL: Record<AuditAction, string> = {
   RULE_NEW_VERSION: 'Nouvelle version',
   RULE_TEST: 'Test',
   RULE_SUBMIT: 'Soumission',
+  RULE_WITHDRAW: 'Soumission retirée',
 };
 
 export function AuditTable({ events, showRule = true }: { events: AuditEvent[]; showRule?: boolean }) {

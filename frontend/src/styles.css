@@ -605,9 +605,16 @@ table.data tr:last-child td {
 .tabs {
   display: flex;
   gap: 2px;
-  border-bottom: 1px solid var(--border);
+  /* Filet dessiné à l'intérieur : rien ne dépasse, donc pas de barre de défilement parasite (Windows). */
+  box-shadow: inset 0 -1px 0 var(--border);
   margin-bottom: 16px;
+  /* Défilement horizontal sur écran étroit, sans barre visible. */
   overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar {
+  display: none;
 }
 .tab {
   background: none;
@@ -617,7 +624,6 @@ table.data tr:last-child td {
   padding: 10px 14px;
   cursor: pointer;
   border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
   white-space: nowrap;
 }
 .tab[aria-selected='true'] {

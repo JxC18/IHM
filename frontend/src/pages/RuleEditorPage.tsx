@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import { CRITICALITIES, SCHEDULES, type RuleDetail, type RuleInput, type SqlIssue } from '../api/types';
+import { CRITICALITIES, SCHEDULES, type Draft, type RuleDetail, type RuleInput, type SqlIssue } from '../api/types';
 import { SqlEditor, type SqlEditorHandle } from '../components/SqlEditor';
 import { TestPanel } from '../components/TestPanel';
 import { Breadcrumb } from '../components/Breadcrumb';
@@ -24,7 +24,7 @@ WHERE o.order_date = @run_date
 `,
 };
 
-const toInput = (r: RuleDetail): RuleInput => ({
+const toInput = (r: RuleInput): RuleInput => ({
   name: r.name,
   description: r.description,
   fraudTypology: r.fraudTypology,
@@ -40,12 +40,22 @@ interface StoredDraft {
   savedAt: string;
 }
 
+/**
+ * Éditeur = espace de travail du brouillon personnel (visible de son seul auteur).
+ *  - /rules/new             nouvelle règle (le brouillon est créé au premier enregistrement) ;
+ *  - /rules/:ruleId/edit    nouvelle version d'une règle, ou reprise d'une soumission jamais exécutée ;
+ *  - /drafts/:draftId       brouillon existant : enregistrer, tester, soumettre ou supprimer.
+ */
 export function RuleEditorPage() {
-  const { ruleId } = useParams();
+  const { ruleId, draftId } = useParams();
   const nav = useNavigate();
-  const draftKey = `editorDraft.${ruleId ?? 'new'}`;
+  const loc = useLocation();
+  const flash = (loc.state as { flash?: string } | null)?.flash;
+  const draftKey = `editorDraft.${draftId ?? ruleId ?? 'new'}`;
 
   const [rule, setRule] = useState<RuleDetail>();
+  const [draft, setDraft] = useState<Draft>();
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [loadError, setLoadError] = useState<string>();
   const [base, setBase] = useState<RuleInput>(EMPTY);
   const [form, setForm] = useState<RuleInput>(EMPTY);
@@ -54,25 +64,35 @@ export function RuleEditorPage() {
   const [execHash, setExecHash] = useState<string>();
   const [nameTaken, setNameTaken] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [saving, setSaving] = useState<'save' | 'submit' | null>(null);
+  const [saving, setSaving] = useState<'save' | 'submit' | 'delete' | null>(null);
   const [error, setError] = useState<string>();
   const editor = useRef<SqlEditorHandle>(null);
+  const targetRuleId = draft?.ruleId ?? rule?.ruleId;
 
   // Chargement + proposition de restaurer un brouillon non enregistré (localStorage).
   useEffect(() => {
     let cancelled = false;
     (async () => {
       let initial = EMPTY;
-      if (ruleId) {
-        try {
+      try {
+        if (draftId) {
+          const d = await api.getDraft(draftId);
+          if (cancelled) return;
+          setDraft(d);
+          initial = toInput(d);
+          const t = d.lastTest;
+          if (t?.success && t.phase === 'EXECUTION') setExecHash(t.queryHash);
+        } else if (ruleId) {
           const r = await api.getRule(ruleId);
           if (cancelled) return;
+          // Un brouillon par règle et par personne : on reprend celui qui existe.
+          if (r.myDraftId) return nav(`/drafts/${r.myDraftId}`, { replace: true });
           setRule(r);
           initial = toInput(r);
-        } catch (e) {
-          setLoadError((e as Error).message);
-          return;
         }
+      } catch (e) {
+        setLoadError((e as Error).message);
+        return;
       }
       setBase(initial);
       setForm(initial);
@@ -82,7 +102,8 @@ export function RuleEditorPage() {
     return () => {
       cancelled = true;
     };
-  }, [ruleId, draftKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ruleId, draftId, draftKey]);
 
   const dirty = !same(form, base);
 
@@ -104,9 +125,9 @@ export function RuleEditorPage() {
   useEffect(() => {
     const name = form.name.trim();
     if (!name) return setNameTaken(false);
-    const t = setTimeout(() => api.checkNameAvailable(name, ruleId).then((ok) => setNameTaken(!ok)), 300);
+    const t = setTimeout(() => api.checkNameAvailable(name, targetRuleId).then((ok) => setNameTaken(!ok)), 300);
     return () => clearTimeout(t);
-  }, [form.name, ruleId]);
+  }, [form.name, targetRuleId]);
 
   const paramIssues = useMemo(() => checkParams(form.sqlQuery), [form.sqlQuery]);
   const hash = queryHash(form.sqlQuery);
@@ -125,18 +146,26 @@ export function RuleEditorPage() {
     sqlQuery: !form.sqlQuery.trim(),
   };
   const formValid = !Object.values(missing).some(Boolean) && !nameTaken;
-  // Seule une version qui a tourné dans Airflow est figée ; une version soumise jamais exécutée se modifie sur place.
-  const createsVersion = rule && rule.status !== 'DRAFT' && rule.status !== 'SUBMITTED';
-  const withdraws = rule?.status === 'SUBMITTED';
-  usePageTitle(rule ? `${createsVersion ? 'Nouvelle version' : 'Modifier'} · ${rule.name}` : ruleId ? undefined : 'Nouvelle règle');
+  const withdraws = !!rule?.canWithdraw;
+  const heading = draft
+    ? `Brouillon — ${draft.name}`
+    : rule
+      ? withdraws
+        ? `Modifier la v${rule.version} — ${rule.name}`
+        : `Nouvelle version — ${rule.name}`
+      : 'Nouvelle règle';
+  usePageTitle(draft || rule || !(ruleId || draftId) ? heading : undefined);
   const canSubmit = formValid && execHash === hash && !paramIssues.some((i) => i.severity === 'error');
+  // Un collègue a soumis une version depuis que ce brouillon a été commencé.
+  const behind = draft && draft.latestVersion !== undefined && draft.latestVersion !== draft.baseVersion;
 
-  async function persist(): Promise<RuleDetail> {
-    if (rule && !dirty) return rule;
-    const r = rule ? await api.updateRule(rule.ruleId, form) : await api.createRule(form);
+  async function persist(): Promise<Draft> {
+    if (draft && !dirty) return draft;
+    const d = draft ? await api.updateDraft(draft.id, form) : await api.createDraft({ ...form, ruleId: rule?.ruleId });
     writePref(draftKey, null);
     setBase(form);
-    return r;
+    setDraft(d);
+    return d;
   }
 
   async function save(e?: FormEvent, andSubmit = false) {
@@ -146,9 +175,13 @@ export function RuleEditorPage() {
     setSaving(andSubmit ? 'submit' : 'save');
     setError(undefined);
     try {
-      let r = await persist();
-      if (andSubmit) r = await api.submitRule(r.ruleId);
-      nav(`/rules/${r.ruleId}`, { state: { flash: andSubmit ? 'submitted' : 'saved' } });
+      const d = await persist();
+      if (andSubmit) {
+        const r = await api.submitDraft(d.id);
+        nav(`/rules/${r.ruleId}`, { state: { flash: 'submitted' } });
+      } else {
+        nav(`/drafts/${d.id}`, { replace: true, state: { flash: d.withdrawn ? 'withdrawn' : 'saved' } });
+      }
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -156,8 +189,22 @@ export function RuleEditorPage() {
     }
   }
 
+  async function remove() {
+    if (!draft) return;
+    setSaving('delete');
+    try {
+      await api.deleteDraft(draft.id);
+      writePref(draftKey, null);
+      nav(draft.newRule ? '/drafts' : `/rules/${draft.ruleId}`, { state: { flash: 'draftDeleted' } });
+    } catch (err) {
+      setError((err as Error).message);
+      setSaving(null);
+    }
+  }
+
   if (loadError) return <Alert kind="error" title={loadError} />;
-  if (ruleId && !rule) return <Spinner />;
+  if ((ruleId && !rule) || (draftId && !draft)) return <Spinner />;
+  const cancelTo = draft ? (draft.newRule ? '/drafts' : `/rules/${draft.ruleId}`) : rule ? `/rules/${rule.ruleId}` : '/rules';
 
   const err = (k: keyof typeof missing) => submitted && missing[k];
 
@@ -167,21 +214,30 @@ export function RuleEditorPage() {
         <div>
           <Breadcrumb
             items={
-              rule
-                ? [
-                    { label: 'Règles', to: '/rules' },
-                    { label: rule.name, to: `/rules/${rule.ruleId}` },
-                    { label: createsVersion ? 'Nouvelle version' : 'Modifier' },
-                  ]
-                : [{ label: 'Règles', to: '/rules' }, { label: 'Nouvelle règle' }]
+              draft
+                ? [{ label: 'Mes brouillons', to: '/drafts' }, { label: draft.name }]
+                : rule
+                  ? [
+                      { label: 'Règles', to: '/rules' },
+                      { label: rule.name, to: `/rules/${rule.ruleId}` },
+                      { label: withdraws ? 'Modifier' : 'Nouvelle version' },
+                    ]
+                  : [{ label: 'Règles', to: '/rules' }, { label: 'Nouvelle règle' }]
             }
           />
-          <h1>{rule ? (createsVersion ? `Nouvelle version — ${rule.name}` : `Modifier — ${rule.name}`) : 'Nouvelle règle'}</h1>
-          <p>Décrivez la règle, écrivez la requête, testez-la, puis soumettez-la à l'équipe data.</p>
+          <h1>{heading}</h1>
+          <p>
+            {draft
+              ? draft.newRule
+                ? 'Nouvelle règle, '
+                : `Nouvelle version de la règle (préparée à partir de la v${draft.baseVersion ?? draft.latestVersion}), `
+              : 'Décrivez la règle, écrivez la requête, testez-la, puis soumettez-la. Brouillon '}
+            visible de vous seul jusqu'à sa soumission.
+          </p>
         </div>
         <div className="row">
-          <Link to={rule ? `/rules/${rule.ruleId}` : '/rules'} className="btn">
-            Annuler
+          <Link to={cancelTo} className="btn">
+            {draft ? 'Fermer' : 'Annuler'}
           </Link>
           <button type="submit" className="btn" disabled={!!saving}>
             {saving === 'save' && <span className="spinner" aria-hidden="true" />}
@@ -201,6 +257,25 @@ export function RuleEditorPage() {
       </div>
 
       <div className="stack">
+        {flash === 'saved' && !dirty && <Alert kind="success" title="Brouillon enregistré. Vous seul le voyez ; reprenez-le quand vous voulez depuis « Mes brouillons »." />}
+        {flash === 'withdrawn' && !dirty && (
+          <Alert kind="success" title="Soumission retirée : la version est redevenue votre brouillon.">
+            Elle est sortie de <span className="mono">rules_registry</span> (Airflow ne peut plus la prendre) et l'équipe data est prévenue. Testez-la
+            puis soumettez-la à nouveau.
+          </Alert>
+        )}
+        {flash?.startsWith('restored:') && !dirty && (
+          <Alert kind="success" title={`Contenu de la v${flash.split(':')[1]} repris dans votre brouillon.`}>
+            Testez-le puis soumettez-le : Airflow exécutera cette version dès le run suivant.
+          </Alert>
+        )}
+        {behind && (
+          <Alert kind="warn" title={`La v${draft.latestVersion} a été soumise depuis que vous avez commencé ce brouillon.`}>
+            Vous êtes parti{draft.baseVersion ? ` de la v${draft.baseVersion}` : ' d’une version précédente'} : vérifiez que ce brouillon tient compte des
+            changements de la <Link to={`/rules/${draft.ruleId}`}>v{draft.latestVersion}</Link>. À la soumission, il deviendra la v
+            {draft.latestVersion! + 1}.
+          </Alert>
+        )}
         {restorable && (
           <Alert kind="info" title="Un brouillon non enregistré a été retrouvé sur ce poste.">
             <div className="row" style={{ marginTop: 6 }}>
@@ -214,20 +289,31 @@ export function RuleEditorPage() {
             </div>
           </Alert>
         )}
-        {withdraws && (
-          <Alert kind="info" title={`La v${rule.version} est soumise mais pas encore en production : vous pouvez la modifier.`}>
-            L'enregistrement la repasse en brouillon (toujours v{rule.version}) : elle est retirée de{' '}
-            <span className="mono">rules_registry</span>, Airflow ne peut donc plus la prendre, et l'équipe data est prévenue.
-            Il faudra la retester puis la soumettre à nouveau.
+        {rule && withdraws && (
+          <Alert kind="info" title={`Vous avez soumis la v${rule.version}, qu'Airflow n'a pas encore exécutée : vous pouvez la reprendre.`}>
+            L'enregistrement la retire de <span className="mono">rules_registry</span> (Airflow ne peut donc plus la prendre), prévient l'équipe data et
+            en refait votre brouillon personnel. Il faudra la retester puis la soumettre à nouveau ; elle gardera le numéro v{rule.version}.
           </Alert>
         )}
-        {createsVersion && (
-          <Alert kind="warn" title={`La version v${rule.version} est « ${STATUS_LABEL[rule.status]} » et n'est plus modifiable.`}>
-            L'enregistrement créera la version <strong>v{rule.version + 1}</strong> en brouillon. La v{rule.version} reste inchangée
-            {rule.status === 'IN_PRODUCTION' || rule.status === 'INACTIVE'
-              ? ` et continue de tourner jusqu'à la soumission de la v${rule.version + 1} : Airflow exécute toujours la dernière version soumise`
-              : ''}
-            .
+        {rule && !withdraws && (
+          <Alert kind="info" title={`Vous préparez une nouvelle version à partir de la v${rule.version} (« ${STATUS_LABEL[rule.status]} »).`}>
+            La v{rule.version} reste inchangée
+            {rule.status === 'IN_PRODUCTION' || rule.status === 'INACTIVE' ? ' et continue de tourner' : ''} jusqu'à la soumission de votre brouillon,
+            qui deviendra alors la v{rule.version + 1}. D'ici là, personne d'autre ne le voit.
+          </Alert>
+        )}
+        {confirmDelete && draft && (
+          <Alert kind="warn" title="Supprimer ce brouillon ?">
+            Son contenu sera perdu{draft.newRule ? '' : ` ; la règle et ses versions soumises ne changent pas`}.
+            <div className="row" style={{ marginTop: 8 }}>
+              <button type="button" className="btn btn-sm btn-danger" onClick={remove} disabled={!!saving}>
+                {saving === 'delete' && <span className="spinner" aria-hidden="true" />}
+                Supprimer
+              </button>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setConfirmDelete(false)}>
+                Annuler
+              </button>
+            </div>
           </Alert>
         )}
         {error && <Alert kind="error" title={error} />}
@@ -235,7 +321,7 @@ export function RuleEditorPage() {
         <section className="card" aria-labelledby="sec-def">
           <div className="card-head">
             <h2 id="sec-def">Définition</h2>
-            {rule && <StatusBadge status={createsVersion || withdraws ? 'DRAFT' : rule.status} />}
+            <StatusBadge status="DRAFT" />
           </div>
           <div className="card-pad form-grid">
             <div className="field span-2">
@@ -357,7 +443,7 @@ export function RuleEditorPage() {
           <div className="card-pad">
             <TestPanel
               sql={form.sqlQuery}
-              ruleId={rule?.ruleId}
+              target={draft ? { draftId: draft.id } : undefined}
               onIssues={setDryIssues}
               onGoTo={(l, c) => editor.current?.goTo(l, c)}
               onExecuted={setExecHash}
@@ -367,9 +453,18 @@ export function RuleEditorPage() {
 
         <div className="row">
           <span className="small muted">
-            {dirty ? 'Modifications non enregistrées (conservées localement sur ce poste).' : 'Aucune modification.'}
+            {dirty
+              ? 'Modifications non enregistrées (conservées localement sur ce poste en attendant).'
+              : draft
+                ? `Brouillon enregistré le ${fmtDateTime(draft.updatedAt)}.`
+                : 'Aucune modification.'}
           </span>
           <span className="spacer" />
+          {draft && (
+            <button type="button" className="btn btn-ghost" disabled={!!saving} onClick={() => setConfirmDelete(true)}>
+              Supprimer le brouillon
+            </button>
+          )}
           <button type="submit" className="btn" disabled={!!saving}>
             Enregistrer le brouillon
           </button>

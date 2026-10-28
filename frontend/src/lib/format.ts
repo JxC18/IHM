@@ -1,6 +1,6 @@
-import type { Criticality, RuleStatus, Schedule } from '../api/types';
+import type { Criticality, DisplayStatus, Schedule } from '../api/types';
 
-export const STATUS_LABEL: Record<RuleStatus, string> = {
+export const STATUS_LABEL: Record<DisplayStatus, string> = {
   DRAFT: 'Brouillon',
   SUBMITTED: 'Soumise',
   IN_PRODUCTION: 'En production',
@@ -8,8 +8,8 @@ export const STATUS_LABEL: Record<RuleStatus, string> = {
   REPLACED: 'Remplacée',
 };
 
-export const STATUS_HELP: Record<RuleStatus, string> = {
-  DRAFT: 'En cours de rédaction',
+export const STATUS_HELP: Record<DisplayStatus, string> = {
+  DRAFT: 'En cours de rédaction, visible de vous seul',
   SUBMITTED: "Soumise : exécutée par Airflow dès le prochain run (ou dès que l'équipe data a créé le DAG)",
   IN_PRODUCTION: 'Exécutée par Airflow',
   INACTIVE: 'Plus aucune exécution Airflow depuis 3 périodes',

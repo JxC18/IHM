@@ -103,18 +103,44 @@ class RuleVersion(Base):
     criticality: Mapped[str] = mapped_column(String(10))
     schedule: Mapped[str] = mapped_column(String(10))
     sql_query: Mapped[str] = mapped_column(Text)
-    # Seuls les gestes de l'analyste sont stockés (DRAFT, SUBMITTED). En production, inactive et
+    # Toute version est soumise : les brouillons vivent dans `drafts`. En production, inactive et
     # remplacée se déduisent des exécutions Airflow (colonnes *_run_at), voir rules.derive_status.
-    status: Mapped[str] = mapped_column(String(20), index=True)
+    submitted_by: Mapped[str] = mapped_column(String(6), ForeignKey("users.matricule"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     # Recopiés depuis BigQuery `rule_runs` par la synchronisation (rules.sync_runs).
     airflow_dag_id: Mapped[str | None] = mapped_column(String(200))
     first_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     rule: Mapped[Rule] = relationship(back_populates="versions")
+
+
+class Draft(Base):
+    """Brouillon personnel : la sauvegarde de travail d'un analyste, comme son profil.
+
+    Visible de lui seul, jamais publié dans `rules_registry`. Il devient une version de règle
+    (et la règle entre dans le référentiel partagé) au moment de la soumission.
+    """
+
+    __tablename__ = "drafts"
+    __table_args__ = (UniqueConstraint("matricule", "rule_id"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    matricule: Mapped[str] = mapped_column(String(6), ForeignKey("users.matricule"), index=True)
+    # Règle visée. Pour une nouvelle règle, identifiant réservé : la règle est créée à la soumission.
+    rule_id: Mapped[str] = mapped_column(String(36))
+    # Version de départ (None : nouvelle règle).
+    base_version: Mapped[int | None] = mapped_column(Integer)
+    name: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(Text)
+    fraud_typology: Mapped[str] = mapped_column(String(100))
+    criticality: Mapped[str] = mapped_column(String(10))
+    schedule: Mapped[str] = mapped_column(String(10))
+    sql_query: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class TestRun(Base):
@@ -126,6 +152,8 @@ class TestRun(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     rule_id: Mapped[str | None] = mapped_column(String(36), index=True)
     version: Mapped[int | None] = mapped_column(Integer)
+    # Test d'un brouillon : rattaché à la version créée lors de sa soumission.
+    draft_id: Mapped[str | None] = mapped_column(String(36), index=True)
     query_hash: Mapped[str] = mapped_column(String(16))
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     by_matricule: Mapped[str] = mapped_column(String(6), index=True)

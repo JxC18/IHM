@@ -10,7 +10,7 @@ import { DiffView } from '../components/DiffView';
 import { PerformanceDashboard } from '../components/PerformanceDashboard';
 import { Alert, CriticalityBadge, idleFor, Lifecycle, Spinner, StatusBadge } from '../components/ui';
 import { AuditTable } from './AuditPage';
-import { SCHEDULE_LABEL, STATUS_LABEL, fmtBytes, fmtDateTime, fmtDuration, fmtEur, fmtInt } from '../lib/format';
+import { SCHEDULE_LABEL, fmtBytes, fmtDateTime, fmtDuration, fmtEur, fmtInt } from '../lib/format';
 import { queryHash } from '../lib/sql';
 import { useAsync } from '../lib/useAsync';
 import { usePref } from '../prefs/prefs';
@@ -23,9 +23,7 @@ export function RuleDetailPage() {
   const nav = useNavigate();
   const rule = useAsync(() => api.getRule(ruleId), [ruleId]);
   const [tab, setTab] = usePref<Tab>('ruleTab', 'definition');
-  const [flash, setFlash] = useState<string | undefined>((loc.state as { flash?: string } | null)?.flash);
-  const [actionError, setActionError] = useState<string>();
-  const [busy, setBusy] = useState(false);
+  const [flash] = useState<string | undefined>((loc.state as { flash?: string } | null)?.flash);
 
   useEffect(() => {
     if (flash) nav(loc.pathname, { replace: true, state: null });
@@ -39,9 +37,6 @@ export function RuleDetailPage() {
   const r = rule.data;
 
   const hash = queryHash(r.sqlQuery);
-  const last = r.lastTest;
-  const testOk = !!last && last.success && last.phase === 'EXECUTION' && last.queryHash === hash;
-  const canSubmit = r.status === 'DRAFT' && testOk;
   const everInProduction = r.versions.some((v) => !!v.firstRunAt);
 
   /** Ouvre l'onglet Définition et fait défiler jusqu'au bloc de test. */
@@ -51,19 +46,6 @@ export function RuleDetailPage() {
           behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
           block: 'start',
         }), 50);
-  }
-
-  async function submit() {
-    setBusy(true);
-    setActionError(undefined);
-    try {
-      rule.setData(await api.submitRule(r.ruleId));
-      setFlash('submitted');
-    } catch (e) {
-      setActionError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
   }
 
   const tabs: [Tab, string, number?][] = [
@@ -96,40 +78,34 @@ export function RuleDetailPage() {
           <button type="button" className="btn" onClick={showTest}>
             ▶ Tester
           </button>
-          <Link to={`/rules/${r.ruleId}/edit`} className="btn">
-            {r.status === 'DRAFT' || r.status === 'SUBMITTED' ? 'Modifier' : 'Créer une nouvelle version'}
-          </Link>
-          {r.status === 'DRAFT' && (
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={!canSubmit || busy}
-              onClick={submit}
-              title={canSubmit ? undefined : 'Une exécution de test réussie sur la version courante est requise'}
-            >
-              {busy && <span className="spinner" aria-hidden="true" />}
-              Soumettre à l'équipe data
-            </button>
+          {r.myDraftId ? (
+            <Link to={`/drafts/${r.myDraftId}`} className="btn btn-primary">
+              Reprendre mon brouillon
+            </Link>
+          ) : (
+            <Link to={`/rules/${r.ruleId}/edit`} className="btn btn-primary">
+              {r.canWithdraw ? 'Modifier' : 'Créer une nouvelle version'}
+            </Link>
           )}
         </div>
       </div>
 
       <div className="stack" style={{ marginBottom: 16 }}>
-        {flash === 'saved' && <Alert kind="success" title="Règle enregistrée." />}
-        {flash?.startsWith('restored:') && (
-          <Alert kind="success" title={`Contenu de la v${flash.split(':')[1]} restauré dans la v${r.version} (brouillon).`}>
-            Testez-la puis soumettez-la : Airflow exécutera cette version dès le run suivant.
-          </Alert>
-        )}
+        {flash === 'draftDeleted' && <Alert kind="success" title="Brouillon supprimé." />}
         {flash === 'submitted' && (
-          <Alert kind="success" title="Règle soumise.">
+          <Alert kind="success" title={`v${r.version} soumise à l'équipe data.`}>
             {r.versionCount > 1 || r.productionVersion
               ? 'Airflow exécutera cette version dès le prochain run.'
               : "L'équipe data est prévenue pour créer le DAG ; Airflow exécutera ensuite toujours la dernière version soumise."}{' '}
-            Vous pouvez encore la modifier tant qu'Airflow ne l'a pas exécutée : elle repassera alors en brouillon.
+            Vous pouvez encore la modifier tant qu'Airflow ne l'a pas exécutée : elle redeviendra alors votre brouillon.
           </Alert>
         )}
-        {actionError && <Alert kind="error" title={actionError} />}
+        {r.myDraftId && !flash && (
+          <Alert kind="info" title="Vous préparez une nouvelle version de cette règle.">
+            Votre brouillon n'est visible que de vous.{' '}
+            <Link to={`/drafts/${r.myDraftId}`}>Le reprendre</Link>
+          </Alert>
+        )}
         {r.status === 'INACTIVE' && r.lastRunAt && (
           <Alert kind="warn" title={`Plus exécutée par Airflow depuis ${idleFor(r.lastRunAt)}`}>
             Dernier run le {fmtDateTime(r.lastRunAt)}. Le DAG a été arrêté ou est en panne : vérifiez auprès de l'équipe data. Le statut
@@ -138,23 +114,7 @@ export function RuleDetailPage() {
         )}
         {r.productionVersion && (
           <Alert kind="info" title={`La v${r.productionVersion} tourne en production.`}>
-            {r.status === 'SUBMITTED'
-              ? `La v${r.version}, soumise, la remplacera au prochain run Airflow.`
-              : `La v${r.version} (${STATUS_LABEL[r.status].toLowerCase()}) la remplacera une fois soumise : Airflow exécute toujours la dernière version soumise.`}
-          </Alert>
-        )}
-        {r.status === 'DRAFT' && !testOk && (
-          <Alert kind="warn" title="Pas encore soumissible">
-            {!last
-              ? 'Cette version n’a jamais été testée.'
-              : last.queryHash !== hash
-                ? 'Le dernier test ne porte pas sur la version actuelle de la requête.'
-                : !last.success
-                  ? 'Le dernier test a échoué.'
-                  : 'Le dernier test est un dry-run : confirmez l’exécution échantillonnée.'}{' '}
-            <button type="button" className="linkish" onClick={showTest}>
-              Tester la requête
-            </button>
+            La v{r.version}, soumise, la remplacera au prochain run Airflow.
           </Alert>
         )}
       </div>
@@ -175,11 +135,7 @@ export function RuleDetailPage() {
         {tab === 'versions' && (
           <VersionsTab
             r={r}
-            onRestored={(d, from) => {
-              rule.setData(d);
-              setFlash(`restored:${from}`);
-              setTab('definition');
-            }}
+            onRestored={(draftId, from) => nav(`/drafts/${draftId}`, { state: { flash: `restored:${from}` } })}
           />
         )}
         {tab === 'audit' && <RuleAudit ruleId={r.ruleId} />}
@@ -203,12 +159,10 @@ function DefinitionTab({ r, onTested }: { r: RuleDetail; onTested: () => void })
           <dd className="mono small">{r.ruleId}</dd>
           <dt>Créée le</dt>
           <dd>{fmtDateTime(r.createdAt)}</dd>
-          {r.submittedAt && (
-            <>
-              <dt>Soumise le</dt>
-              <dd>{fmtDateTime(r.submittedAt)}</dd>
-            </>
-          )}
+          <dt>Soumise le</dt>
+          <dd>
+            {fmtDateTime(r.submittedAt)} par {r.submittedByName}
+          </dd>
           <dt>DAG Airflow</dt>
           <dd className="mono small">{r.airflowDagId ?? <span className="muted">— pas encore exécutée par Airflow</span>}</dd>
           {r.firstRunAt && (
@@ -234,15 +188,14 @@ function DefinitionTab({ r, onTested }: { r: RuleDetail; onTested: () => void })
           <div>
             <h2 id="rule-test-title">Tester la requête</h2>
             <p>
-              Test de la v{r.version} telle qu'enregistrée, sans créer de nouvelle version
-              {r.status === 'DRAFT' ? ' : un test réussi permet de la soumettre.' : '.'}
+              Test de la v{r.version} telle que soumise, sans rien modifier.
             </p>
           </div>
         </div>
         <div className="card-pad">
           <TestPanel
             sql={r.sqlQuery}
-            ruleId={r.ruleId}
+            target={{ ruleId: r.ruleId }}
             onIssues={setIssues}
             onGoTo={(l, c) => editor.current?.goTo(l, c)}
             onTested={onTested}
@@ -305,27 +258,28 @@ function TestsTab({ r, hash }: { r: RuleDetail; hash: string }) {
   );
 }
 
-function VersionsTab({ r, onRestored }: { r: RuleDetail; onRestored: (d: RuleDetail, from: number) => void }) {
+function VersionsTab({ r, onRestored }: { r: RuleDetail; onRestored: (draftId: string, from: number) => void }) {
   const versions = r.versions; // plus récente d'abord
   const [confirming, setConfirming] = useState<number | null>(null);
   const [restoring, setRestoring] = useState(false);
   const [restoreError, setRestoreError] = useState<string>();
 
-  /** Recopie une version antérieure dans la version courante (brouillon) ou dans une nouvelle version. */
+  /** Recopie une version antérieure dans le brouillon personnel de l'utilisateur (créé au besoin). */
   async function restore(v: RuleVersion) {
     setRestoring(true);
     setRestoreError(undefined);
     try {
-      const d = await api.updateRule(r.ruleId, {
+      const content = {
         name: r.name, // le nom identifie la règle : on garde le nom actuel
         description: v.description,
         fraudTypology: v.fraudTypology,
         criticality: v.criticality,
         schedule: v.schedule,
         sqlQuery: v.sqlQuery,
-      });
+      };
+      const d = r.myDraftId ? await api.updateDraft(r.myDraftId, content) : await api.createDraft({ ...content, ruleId: r.ruleId });
       setConfirming(null);
-      onRestored(d, v.version);
+      onRestored(d.id, v.version);
     } catch (e) {
       setRestoreError((e as Error).message);
     } finally {
@@ -349,7 +303,7 @@ function VersionsTab({ r, onRestored }: { r: RuleDetail; onRestored: (d: RuleDet
                 <th>Version</th>
                 <th>Statut</th>
                 <th>Créée le</th>
-                <th>Soumise le</th>
+                <th>Soumise</th>
                 <th>DAG</th>
                 <th>
                   <span className="sr-only">Actions</span>
@@ -367,7 +321,10 @@ function VersionsTab({ r, onRestored }: { r: RuleDetail; onRestored: (d: RuleDet
                     <StatusBadge status={v.status} lastRunAt={v.lastRunAt} />
                   </td>
                   <td className="small">{fmtDateTime(v.createdAt)}</td>
-                  <td className="small">{v.submittedAt ? fmtDateTime(v.submittedAt) : '—'}</td>
+                  <td className="small">
+                    {fmtDateTime(v.submittedAt)}
+                    <div className="muted">{v.submittedByName}</div>
+                  </td>
                   <td className="small mono">{v.airflowDagId ?? '—'}</td>
                   <td>
                     <div className="row" style={{ gap: 6, flexWrap: 'nowrap', justifyContent: 'flex-end' }}>
@@ -401,10 +358,12 @@ function VersionsTab({ r, onRestored }: { r: RuleDetail; onRestored: (d: RuleDet
 
       {confirming !== null && (
         <Alert kind="info" title={`Restaurer la v${confirming} ?`}>
-          {r.status === 'DRAFT' || r.status === 'SUBMITTED'
-            ? `Le contenu de la v${confirming} remplace celui de la v${r.version}, qui repasse en brouillon.`
-            : `Une v${r.version + 1} est créée en brouillon avec le contenu de la v${confirming}. La v${r.version} continue de tourner jusqu'à la soumission de la v${r.version + 1}.`}{' '}
-          Il faudra ensuite la tester et la soumettre.
+          {r.myDraftId
+            ? `Le contenu de la v${confirming} remplace celui de votre brouillon en cours.`
+            : r.canWithdraw
+              ? `Votre soumission de la v${r.version} est retirée (Airflow ne l'a jamais exécutée) et redevient votre brouillon, avec le contenu de la v${confirming}.`
+              : `Un brouillon personnel est créé avec le contenu de la v${confirming}. La v${r.version} reste en place jusqu'à sa soumission.`}{' '}
+          Il faudra ensuite le tester et le soumettre.
         </Alert>
       )}
       {restoreError && <Alert kind="error" title={restoreError} />}

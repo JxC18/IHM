@@ -1,4 +1,4 @@
-import type { AuditEvent, RuleVersion, TestRecord, User } from '../types';
+import type { AuditEvent, RuleInput, RuleVersion, TestRecord, User } from '../types';
 import { queryHash } from '../../lib/sql';
 
 export interface MockRule {
@@ -16,17 +16,28 @@ export interface MockRule {
   versionProfiles?: Record<number, { dailyVolume?: number; precision?: number }>;
 }
 
+/** Brouillon personnel stocké (comme la table `drafts`) : visible de son seul auteur. */
+export interface MockDraft extends RuleInput {
+  id: string;
+  matricule: string;
+  ruleId: string;
+  baseVersion?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface MockDb {
   schema: number;
   users: User[];
   rules: MockRule[];
+  drafts: MockDraft[];
   tests: TestRecord[];
   audit: AuditEvent[];
   /** Octets scannés par matricule et par mois (budget F3). */
   usage: Record<string, Record<string, number>>;
 }
 
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 const daysAgo = (n: number, h = 10) => {
   const d = new Date();
@@ -56,7 +67,19 @@ interface Def {
   sql: string;
 }
 
-function v(def: Def, version: number, status: RuleVersion['status'], created: number, extra: Partial<RuleVersion> = {}): RuleVersion {
+function content(def: Def): RuleInput {
+  return {
+    name: def.name,
+    description: def.description,
+    fraudTypology: def.fraudTypology,
+    criticality: def.criticality,
+    schedule: def.schedule,
+    sqlQuery: def.sql,
+  };
+}
+
+/** Version soumise (toutes les versions stockées le sont ; le statut affiché se déduit des runs). */
+function v(def: Def, version: number, created: number, extra: Partial<RuleVersion> = {}): RuleVersion {
   return {
     ruleId: def.id,
     version,
@@ -66,11 +89,14 @@ function v(def: Def, version: number, status: RuleVersion['status'], created: nu
     criticality: def.criticality,
     schedule: def.schedule,
     sqlQuery: def.sql,
-    status,
+    status: 'SUBMITTED',
     ownerMatricule: def.owner,
     ownerName: name(def.owner),
+    submittedBy: def.owner,
+    submittedByName: name(def.owner),
     createdAt: daysAgo(created),
     updatedAt: daysAgo(Math.max(0, created - 1)),
+    submittedAt: daysAgo(Math.max(0, created - 1)),
     ...extra,
   };
 }
@@ -218,9 +244,9 @@ QUALIFY nb_comptes > 4`,
 
 const R8: Def = {
   id: '7f3c2a10-5b1e-4c8a-9d21-0a1b2c3d4e08',
-  owner: '118870',
+  owner: '104233',
   name: 'Panier électronique multi-articles',
-  description: "Brouillon : plusieurs exemplaires d'un même produit high-tech revendable, compte récent.",
+  description: "Plusieurs exemplaires d'un même produit high-tech revendable, compte récent.",
   fraudTypology: 'Triangulation / revente',
   criticality: 'MEDIUM',
   schedule: 'DAILY',
@@ -251,17 +277,20 @@ function passedTest(r: RuleVersion, at: number, by: string, i: number): TestReco
 }
 
 export function buildSeed(): MockDb {
-  // Seuls les gestes de l'analyste sont stockés (DRAFT / SUBMITTED) ; le reste se déduit des runs.
-  const r1v1 = v({ ...R1, sql: R1_V1_SQL }, 1, 'SUBMITTED', 160, { submittedAt: daysAgo(159), airflowDagId: 'fraud_rule_compte_recent_v1' });
-  const r1v2 = v(R1, 2, 'SUBMITTED', 75, { submittedAt: daysAgo(74), airflowDagId: 'fraud_rule_compte_recent_v2' });
-  const r2v1 = v(R2, 1, 'SUBMITTED', 120, { submittedAt: daysAgo(119), airflowDagId: 'fraud_rule_livraison_pays' });
-  const r3v1 = v(R3, 1, 'SUBMITTED', 95, { submittedAt: daysAgo(94), airflowDagId: 'fraud_rule_tentatives_paiement' });
-  const r3v2 = v({ ...R3, sql: R3_V2_SQL }, 2, 'DRAFT', 3);
-  const r4v1 = v(R4, 1, 'SUBMITTED', 140, { submittedAt: daysAgo(139), airflowDagId: 'fraud_rule_changement_email' });
-  const r5v1 = v(R5, 1, 'SUBMITTED', 6, { submittedAt: daysAgo(5) });
-  const r6v1 = v(R6, 1, 'SUBMITTED', 12, { submittedAt: daysAgo(11) });
-  const r7v1 = v(R7, 1, 'SUBMITTED', 20, { submittedAt: daysAgo(19) });
-  const r8v1 = v(R8, 1, 'DRAFT', 1);
+  // Versions soumises : leur statut affiché se déduit des runs Airflow simulés.
+  const r1v1 = v({ ...R1, sql: R1_V1_SQL }, 1, 160, { submittedAt: daysAgo(159), airflowDagId: 'fraud_rule_compte_recent_v1' });
+  const r1v2 = v(R1, 2, 75, { submittedAt: daysAgo(74), airflowDagId: 'fraud_rule_compte_recent_v2' });
+  const r2v1 = v(R2, 1, 120, { submittedAt: daysAgo(119), airflowDagId: 'fraud_rule_livraison_pays' });
+  const r3v1 = v(R3, 1, 95, { submittedAt: daysAgo(94), airflowDagId: 'fraud_rule_tentatives_paiement' });
+  const r4v1 = v(R4, 1, 140, { submittedAt: daysAgo(139), airflowDagId: 'fraud_rule_changement_email' });
+  const r5v1 = v(R5, 1, 6, { submittedAt: daysAgo(5) });
+  const r6v1 = v(R6, 1, 12, { submittedAt: daysAgo(11) });
+  const r7v1 = v(R7, 1, 20, { submittedAt: daysAgo(19) });
+  // Brouillons personnels de Camille Martin : une nouvelle version de R3, une nouvelle règle.
+  const drafts: MockDraft[] = [
+    { id: 'seed-draft-r3', matricule: '104233', ruleId: R3.id, baseVersion: 1, ...content({ ...R3, sql: R3_V2_SQL }), createdAt: daysAgo(3), updatedAt: daysAgo(2) },
+    { id: 'seed-draft-r8', matricule: '104233', ruleId: R8.id, ...content(R8), createdAt: daysAgo(1), updatedAt: daysAgo(0, 9) },
+  ];
 
   const rules: MockRule[] = [
     {
@@ -283,7 +312,7 @@ export function buildSeed(): MockDb {
     },
     {
       ruleId: R3.id,
-      versions: [r3v1, r3v2],
+      versions: [r3v1],
       productionSince: { 1: daysAgo(90).slice(0, 10) },
       productionUntil: {},
       profile: { dailyVolume: 95, processingRate: 0.31, precision: 0.07 },
@@ -298,7 +327,6 @@ export function buildSeed(): MockDb {
     { ruleId: R5.id, versions: [r5v1], productionSince: {}, productionUntil: {} },
     { ruleId: R6.id, versions: [r6v1], productionSince: {}, productionUntil: {} },
     { ruleId: R7.id, versions: [r7v1], productionSince: {}, productionUntil: {} },
-    { ruleId: R8.id, versions: [r8v1], productionSince: {}, productionUntil: {} },
   ];
 
   const tests: TestRecord[] = [
@@ -312,12 +340,11 @@ export function buildSeed(): MockDb {
     passedTest(r7v1, 20, '104233', 7),
     {
       id: 'seed-test-08-1-fail',
-      ruleId: R8.id,
-      version: 1,
+      draftId: 'seed-draft-r8',
       queryHash: 'deadbeef',
       at: daysAgo(1, 16),
-      byMatricule: '118870',
-      byName: name('118870'),
+      byMatricule: '104233',
+      byName: name('104233'),
       phase: 'DRY_RUN',
       success: false,
       error: 'Not found: Table sales.order_items was not found at [4:6]',
@@ -326,19 +353,20 @@ export function buildSeed(): MockDb {
 
   const audit: AuditEvent[] = [];
   let n = 0;
-  const ev = (at: string, m: string, action: AuditEvent['action'], r: RuleVersion, details?: string) =>
-    audit.push({ id: `seed-audit-${n++}`, at, matricule: m, userName: name(m), action, ruleId: r.ruleId, ruleName: r.name, version: r.version, details });
+  const ev = (at: string, m: string, action: AuditEvent['action'], r: RuleVersion | undefined, details?: string) =>
+    audit.push({ id: `seed-audit-${n++}`, at, matricule: m, userName: name(m), action, ruleId: r?.ruleId, ruleName: r?.name, version: r?.version, details });
   for (const rule of rules) {
     for (const ver of rule.versions) {
-      ev(ver.createdAt, ver.ownerMatricule, ver.version === 1 ? 'RULE_CREATE' : 'RULE_NEW_VERSION', ver);
-      if (ver.submittedAt) ev(ver.submittedAt, ver.ownerMatricule, 'RULE_SUBMIT', ver);
+      ev(ver.submittedAt, ver.submittedBy, 'RULE_SUBMIT', ver, ver.version === 1 ? 'Nouvelle règle' : 'Nouvelle version');
     }
   }
   for (const t of tests) {
-    const r = rules.find((x) => x.ruleId === t.ruleId)!.versions.find((x) => x.version === t.version)!;
-    ev(t.at, t.byMatricule, 'RULE_TEST', r, t.success ? `${t.phase === 'EXECUTION' ? 'Exécution' : 'Dry-run'} réussi` : `Échec : ${t.error}`);
+    // Un test de brouillon est tracé sans nommer la règle (le brouillon est privé).
+    const r = rules.find((x) => x.ruleId === t.ruleId)?.versions.find((x) => x.version === t.version);
+    const outcome = t.success ? `${t.phase === 'EXECUTION' ? 'Exécution' : 'Dry-run'} réussi` : `Échec : ${t.error}`;
+    ev(t.at, t.byMatricule, 'RULE_TEST', r, t.draftId ? `${outcome} (brouillon)` : outcome);
   }
   audit.sort((a, b) => b.at.localeCompare(a.at));
 
-  return { schema: SCHEMA_VERSION, users: USERS.map((u) => ({ ...u })), rules, tests, audit, usage: {} };
+  return { schema: SCHEMA_VERSION, users: USERS.map((u) => ({ ...u })), rules, drafts, tests, audit, usage: {} };
 }

@@ -1,13 +1,12 @@
 import { useMemo, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import { RULE_STATUSES, type RuleFilters, type RuleStatus, type RuleSummary } from '../api/types';
-import { useAuth } from '../auth/AuthContext';
+import { RULE_STATUSES, type RuleFilters, type RuleStatus } from '../api/types';
+import { readyToSubmit } from '../lib/drafts';
 import { Alert, Spinner, StatusBadge } from '../components/ui';
 import { ACTION_LABEL } from './AuditPage';
 import { fmtDate, fmtDateTime, fmtInt, fmtPct } from '../lib/format';
 import { DEFAULT_WATCH_THRESHOLD, productionHealth, type ProductionHealth } from '../lib/metrics';
-import { queryHash } from '../lib/sql';
 import { useAsync } from '../lib/useAsync';
 import { readPref, writePref } from '../prefs/prefs';
 import { usePageTitle } from '../nav/history';
@@ -26,19 +25,13 @@ function CardFoot({ to, onClick, children }: { to: string; onClick?: () => void;
 
 const LIST_FILTERS: RuleFilters = { q: '', status: '', typology: '', owner: '', criticality: '', sort: 'updated_desc' };
 
-/** Brouillon dont la dernière exécution de test réussie porte sur la requête actuelle. */
-function readyToSubmit(r: RuleSummary): boolean {
-  const t = r.lastTest;
-  return r.status === 'DRAFT' && !!t && t.success && t.phase === 'EXECUTION' && t.queryHash === queryHash(r.sqlQuery);
-}
-
 export function OverviewPage() {
   usePageTitle("Vue d'ensemble");
-  const { user } = useAuth();
   const nav = useNavigate();
   const rules = useAsync(() => api.listRules({}), []);
   const prod = useAsync(() => api.getConsolidated(), []);
   const audit = useAsync(() => api.listAudit({}), []);
+  const drafts = useAsync(() => api.listDrafts(), []);
   const threshold = readPref<number>('watchPrecisionThreshold', DEFAULT_WATCH_THRESHOLD);
 
   const health = useMemo(
@@ -58,7 +51,7 @@ export function OverviewPage() {
   const all = rules.data;
   const count = (s: RuleStatus) => all.filter((r) => r.status === s).length;
   const watch = health.filter((h) => h.reasons.length);
-  const myDrafts = all.filter((r) => r.status === 'DRAFT' && r.ownerMatricule === user?.matricule);
+  const myDrafts = drafts.data ?? [];
   const myReady = myDrafts.filter(readyToSubmit);
   const activity = (audit.data ?? []).filter((e) => e.action !== 'LOGIN');
   const maxStatus = Math.max(1, ...RULE_STATUSES.map(count));
@@ -93,13 +86,13 @@ export function OverviewPage() {
             <span className="kpi-sub">Précision sous {fmtPct(threshold)}, aucune remontée sur 30 jours ou plus exécutée par Airflow</span>
             {watch.length > 0 && <span className="kpi-flag">⚠ Action requise</span>}
           </Link>
-          <button type="button" className="card kpi kpi-link" onClick={() => openList({ status: 'DRAFT', owner: user?.matricule ?? '' })}>
+          <Link to="/drafts" className="card kpi kpi-link">
             <span className="kpi-label">Mes brouillons</span>
-            <span className="kpi-value">{fmtInt(myDrafts.length)}</span>
+            <span className="kpi-value">{drafts.data ? fmtInt(myDrafts.length) : '…'}</span>
             <span className="kpi-sub">
-              dont {myReady.length} prêt{myReady.length > 1 ? 's' : ''} à soumettre
+              Visibles de vous seul · dont {myReady.length} prêt{myReady.length > 1 ? 's' : ''} à soumettre
             </span>
-          </button>
+          </Link>
         </div>
 
         <div className="overview-row">
@@ -184,9 +177,9 @@ export function OverviewPage() {
             </div>
               <ul className="ov-list card-body">
                 {myDrafts.slice(0, LIST_MAX).map((r) => (
-                  <li key={r.ruleId}>
-                    <Link to={`/rules/${r.ruleId}`} className="rule-link">
-                      {r.name} <span className="muted small">v{r.version}</span>
+                  <li key={r.id}>
+                    <Link to={`/drafts/${r.id}`} className="rule-link">
+                      {r.name} <span className="muted small">{r.newRule ? 'nouvelle règle' : `v${(r.latestVersion ?? 0) + 1}`}</span>
                     </Link>
                     {readyToSubmit(r) ? (
                       <span className="small" style={{ color: 'var(--good)' }}>
@@ -198,7 +191,7 @@ export function OverviewPage() {
                   </li>
                 ))}
               </ul>
-            <CardFoot to="/rules" onClick={() => writePref('rulesFilters', { ...LIST_FILTERS, status: 'DRAFT', owner: user?.matricule ?? '' })}>
+            <CardFoot to="/drafts">
               {myDrafts.length > LIST_MAX ? `Voir mes ${myDrafts.length} brouillons` : 'Voir mes brouillons'}
             </CardFoot>
           </section>

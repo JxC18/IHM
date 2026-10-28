@@ -12,6 +12,7 @@ import { ProductionPage } from './pages/ProductionPage';
 import { AuditPage } from './pages/AuditPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { OverviewPage } from './pages/OverviewPage';
+import { DraftsPage } from './pages/DraftsPage';
 
 function RequireUser({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
@@ -53,6 +54,8 @@ export function App() {
               <Route path="/rules/new" element={<RuleEditorPage />} />
               <Route path="/rules/:ruleId" element={<RuleDetailPage />} />
               <Route path="/rules/:ruleId/edit" element={<RuleEditorPage />} />
+              <Route path="/drafts" element={<DraftsPage />} />
+              <Route path="/drafts/:draftId" element={<RuleEditorPage />} />
               <Route path="/production" element={<ProductionPage />} />
               <Route path="/audit" element={<AuditPage />} />
               <Route path="/profile" element={<ProfilePage />} />

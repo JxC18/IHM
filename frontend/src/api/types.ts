@@ -2,14 +2,11 @@
 // (PRD §7.2), à une différence près : l'identité est portée par le matricule
 // (PRD §5.4, règle 1), pas par un e-mail.
 
-export const RULE_STATUSES = [
-  'DRAFT',
-  'SUBMITTED',
-  'IN_PRODUCTION',
-  'INACTIVE',
-  'REPLACED',
-] as const;
+/** Statuts d'une version de règle : toutes ont été soumises (les brouillons sont personnels, voir Draft). */
+export const RULE_STATUSES = ['SUBMITTED', 'IN_PRODUCTION', 'INACTIVE', 'REPLACED'] as const;
 export type RuleStatus = (typeof RULE_STATUSES)[number];
+/** Statut affiché : celui d'une version, ou « brouillon » pour le travail en cours d'un analyste. */
+export type DisplayStatus = RuleStatus | 'DRAFT';
 
 export const CRITICALITIES = ['HIGH', 'MEDIUM', 'LOW'] as const;
 export type Criticality = (typeof CRITICALITIES)[number];
@@ -39,9 +36,11 @@ export interface RuleVersion extends RuleInput {
   status: RuleStatus;
   ownerMatricule: string;
   ownerName: string;
+  submittedBy: string;
+  submittedByName: string;
   createdAt: string;
   updatedAt: string;
-  submittedAt?: string;
+  submittedAt: string;
   /** DAG, premier et dernier run : lus dans rule_runs (écrite par Airflow). */
   airflowDagId?: string;
   firstRunAt?: string;
@@ -59,6 +58,37 @@ export interface RuleSummary extends RuleVersion {
 export interface RuleDetail extends RuleSummary {
   versions: RuleVersion[];
   tests: TestRecord[];
+  /** Brouillon de nouvelle version de l'utilisateur connecté, s'il en a un. */
+  myDraftId?: string;
+  /** L'utilisateur a soumis la dernière version et Airflow ne l'a jamais exécutée : il peut la reprendre. */
+  canWithdraw: boolean;
+}
+
+/**
+ * Brouillon personnel : sauvegarde du travail en cours, visible de son seul auteur et jamais
+ * publié dans BigQuery. Il devient une version de règle à la soumission.
+ */
+export interface Draft extends RuleInput {
+  id: string;
+  /** Règle visée ; pour une nouvelle règle, identifiant réservé jusqu'à la soumission. */
+  ruleId: string;
+  /** Version de départ (absente pour une nouvelle règle). */
+  baseVersion?: number;
+  newRule: boolean;
+  /** Dernière version soumise de la règle : si elle dépasse baseVersion, un collègue a soumis entre-temps. */
+  latestVersion?: number;
+  /** Créé à l'instant en retirant une soumission jamais exécutée. */
+  withdrawn: boolean;
+  createdAt: string;
+  updatedAt: string;
+  lastTest?: TestRecord;
+  tests: TestRecord[];
+}
+
+/** Ce sur quoi porte un test : un brouillon, la dernière version d'une règle, ou rien (requête libre). */
+export interface TestTarget {
+  ruleId?: string;
+  draftId?: string;
 }
 
 // ---------- F3 : test de la requête ----------
@@ -119,6 +149,7 @@ export interface TestRecord {
   id: string;
   ruleId?: string;
   version?: number;
+  draftId?: string;
   queryHash: string;
   at: string;
   byMatricule: string;
@@ -200,7 +231,8 @@ export type AuditAction =
   | 'RULE_UPDATE'
   | 'RULE_NEW_VERSION'
   | 'RULE_TEST'
-  | 'RULE_SUBMIT';
+  | 'RULE_SUBMIT'
+  | 'RULE_WITHDRAW';
 
 export interface AuditEvent {
   id: string;

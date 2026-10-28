@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { RULE_STATUSES, type Criticality, type RuleStatus } from '../api/types';
+import { RULE_STATUSES, type Criticality, type DisplayStatus } from '../api/types';
 import { CRITICALITY_LABEL, STATUS_HELP, STATUS_LABEL } from '../lib/format';
 
 /** « depuis 4 j », « depuis 5 h » : durée écoulée depuis le dernier run Airflow. */
@@ -9,7 +9,7 @@ export function idleFor(lastRunAt: string): string {
 }
 
 /** Badge de statut. Pour une règle inactive, `lastRunAt` affiche depuis combien de temps elle ne tourne plus. */
-export function StatusBadge({ status, dim, lastRunAt }: { status: RuleStatus; dim?: boolean; lastRunAt?: string }) {
+export function StatusBadge({ status, dim, lastRunAt }: { status: DisplayStatus; dim?: boolean; lastRunAt?: string }) {
   const label = status === 'INACTIVE' && lastRunAt ? `Inactive depuis ${idleFor(lastRunAt)}` : STATUS_LABEL[status];
   return (
     <span className={`badge st-${status}${dim ? ' dim' : ''}`} title={STATUS_HELP[status]}>
@@ -54,8 +54,8 @@ export function Alert({ kind, title, children }: { kind: AlertKind; title?: Reac
  * Cycle de vie avec le statut courant mis en avant. Les deux premières étapes sont des gestes de
  * l'analyste ; la suite se constate dans les exécutions Airflow.
  */
-export function Lifecycle({ status, lastRunAt }: { status: RuleStatus; lastRunAt?: string }) {
-  const main: RuleStatus[] = ['DRAFT', 'SUBMITTED', 'IN_PRODUCTION'];
+export function Lifecycle({ status, lastRunAt }: { status: DisplayStatus; lastRunAt?: string }) {
+  const main: DisplayStatus[] = ['DRAFT', 'SUBMITTED', 'IN_PRODUCTION'];
   const branch = status === 'INACTIVE' || status === 'REPLACED' ? status : null;
   return (
     <div className="lifecycle" aria-label={`Cycle de vie, statut actuel : ${STATUS_LABEL[status]}`}>

@@ -226,23 +226,6 @@ class RealBigQueryGateway:
             for r in rows
         ]
 
-    def upsert(self, v: RuleVersion, owner_matricule: str) -> None: ...
-
-
-class LoggingRegistry:
-    def upsert(self, v: RuleVersion, owner_matricule: str) -> None:
-        log.info("rules_registry ← %s v%s (%s)", v.rule_id, v.version, v.status)
-
-
-class BigQueryRegistry:
-    def __init__(self) -> None:
-        from google.cloud import bigquery
-
-        s = get_settings()
-        self._bq = bigquery
-        self.client = bigquery.Client(project=s.gcp_project or None, location=s.bq_location)
-        self.table = f"`{self.client.project}.{s.bq_dataset}.rules_registry`"
-
     def run_stats(self):
         rows = self._rows(
             f"""SELECT rule_id, rule_version, MIN(started_at) AS first_run_at, MAX(started_at) AS last_run_at,
