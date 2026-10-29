@@ -300,8 +300,12 @@ navigateur ──► front (Nginx, Cloud Run) ──/api──► API FastAPI (C
   Les statuts « Validée » et « Refusée » disparaissent : un refus passe hors plateforme et l'analyste soumet
   une nouvelle version (risque R3 : le motif n'est pas tracé). L'état des runs est recopié par
   `POST /internal/sync-runs`, à appeler périodiquement (Cloud Scheduler, toutes les heures par exemple).
-- **Contraintes SQL « avant enregistrement »** : seul le DML/DDL bloque l'enregistrement d'un brouillon ;
-  `order_id`, `@run_date` et les dates en dur bloquent la soumission.
+- **Contraintes SQL** : seul le DML/DDL bloque l'enregistrement d'un brouillon. Pour tester, il faut une requête
+  valide pour BigQuery exposant `order_id`. La soumission exige en plus `@run_date` : c'est par lui qu'Airflow
+  choisit le jour traité, à chaque run comme lors des rattrapages ; sans lui, la requête ne pourrait pas être
+  rejouée sur un autre jour. Les dates en dur ne sont qu'une alerte : légitimes comme seuil fixe
+  (`created_at >= '2024-01-01'`), à éviter comme jour traité (`order_date = '2026-10-27'` relirait ce jour à
+  chaque run).
 - **Paramètres (écart au PRD F2)** : pas de paramètres déclarés. Les seuils s'écrivent en dur dans le SQL
   (`amount_eur >= 500`) et leur évolution se lit dans le comparatif entre versions. `@run_date` est le seul
   paramètre : Airflow fournit la date du run sans modifier la requête, ce qui permet relances et rattrapages.

@@ -52,9 +52,10 @@ describe('dry-run simulé', () => {
     expect(i.line).toBe(2);
     expect(i.column).toBe(6);
   });
-  it('refuse les dates en dur', () => {
+  it('signale les dates en dur sans bloquer le test', () => {
     const r = simulateDryRun("SELECT order_id FROM `sales.orders` WHERE order_date = DATE '2026-01-01' AND x = @run_date", G, 't');
-    expect(r.issues.map((i) => i.code)).toContain('HARDCODED_DATE');
+    expect(r.issues.find((i) => i.code === 'HARDCODED_DATE')?.severity).toBe('warning');
+    expect(r.ok).toBe(true);
   });
   it('signale un dépassement du plafond de volume', () => {
     const r = simulateDryRun('SELECT order_id FROM `tracking.web_events_raw` WHERE d = @run_date', G, 't');

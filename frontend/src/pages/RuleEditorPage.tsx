@@ -155,7 +155,12 @@ export function RuleEditorPage() {
         : `Nouvelle version — ${rule.name}`
       : 'Nouvelle règle';
   usePageTitle(draft || rule || !(ruleId || draftId) ? heading : undefined);
-  const canSubmit = formValid && execHash === hash && !paramIssues.some((i) => i.severity === 'error');
+  // @run_date n'est pas exigé pour tester, mais l'est pour soumettre (c'est lui qu'Airflow fait varier).
+  const runDateMissing = paramIssues.some((i) => i.code === 'RUN_DATE_MISSING');
+  const canSubmit = formValid && execHash === hash && !runDateMissing && !paramIssues.some((i) => i.severity === 'error');
+  const submitHint = runDateMissing
+    ? 'La requête doit utiliser @run_date pour être soumise'
+    : 'Une exécution de test réussie sur la requête actuelle est requise';
   // Un collègue a soumis une version depuis que ce brouillon a été commencé.
   const behind = draft && draft.latestVersion !== undefined && draft.latestVersion !== draft.baseVersion;
 
@@ -247,7 +252,7 @@ export function RuleEditorPage() {
             type="button"
             className="btn btn-primary"
             disabled={!!saving || !canSubmit}
-            title={canSubmit ? undefined : 'Une exécution de test réussie sur la requête actuelle est requise'}
+            title={canSubmit ? undefined : submitHint}
             onClick={() => save(undefined, true)}
           >
             {saving === 'submit' && <span className="spinner" aria-hidden="true" />}
@@ -474,7 +479,7 @@ export function RuleEditorPage() {
         </div>
         {!canSubmit && (
           <p className="small muted" style={{ margin: 0, textAlign: 'right' }}>
-            La soumission exige tous les champs obligatoires et une exécution de test réussie sur la requête actuelle.
+            La soumission exige tous les champs obligatoires, l'usage de @run_date et une exécution de test réussie sur la requête actuelle.
           </p>
         )}
       </div>

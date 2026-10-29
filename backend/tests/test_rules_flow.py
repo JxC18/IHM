@@ -148,8 +148,24 @@ def test_dry_run_controles(client, bq):
     login(client)
     bq.next_dry_run = DryRunMeta("SELECT", 10**9, [Column(name="customer_id", type="STRING")])
     sql = "SELECT customer_id FROM t WHERE d = DATE '2026-01-01' AND x = @inconnu"
-    codes = {i["code"] for i in client.post("/query/dry-run", json={"sql": sql}).json()["issues"]}
-    assert {"NO_ORDER_ID", "HARDCODED_DATE", "PARAM_NOT_ALLOWED", "RUN_DATE_MISSING"} <= codes
+    dry = client.post("/query/dry-run", json={"sql": sql}).json()
+    issues = {i["code"]: i["severity"] for i in dry["issues"]}
+    assert issues["NO_ORDER_ID"] == issues["PARAM_NOT_ALLOWED"] == "error"
+    # Date en dur et @run_date absent n'empêchent pas de tester.
+    assert issues["HARDCODED_DATE"] == issues["RUN_DATE_MISSING"] == "warning"
+
+
+def test_date_en_dur_testable_et_soumissible_run_date_exige(client):
+    login(client)
+    # Seuil de date fixe : légitime, la requête se teste et se soumet.
+    sql = SQL + "\n  AND o.created_at >= TIMESTAMP '2024-01-01'"
+    _submit(client, {**RULE, "sqlQuery": sql})
+    # Sans @run_date : testable, mais pas soumissible.
+    sans = "SELECT o.order_id FROM `sales.orders` o WHERE o.order_date = CURRENT_DATE()"
+    did = client.post("/drafts", json={**RULE, "name": "Sans run_date", "sqlQuery": sans}).json()["id"]
+    assert client.post("/query/execute", json={"sql": sans, "draftId": did}).json()["ok"] is True
+    r = client.post(f"/drafts/{did}/submit")
+    assert r.status_code == 409 and r.json()["code"] == "RUN_DATE_MISSING"
 
 
 def test_erreur_bigquery_avec_position(client, bq):

@@ -190,11 +190,18 @@ function analyse(sql: string): Analysis {
     }
   }
 
-  // Dates en dur
+  // Dates en dur : simple alerte (légitimes comme seuil fixe, pas comme jour traité)
   const withStrings = maskSql(sql, true);
   for (const m of withStrings.matchAll(/(?:\b(?:DATE|TIMESTAMP)\s*)?'\d{4}-\d{2}-\d{2}[^']*'/gi)) {
     issues.push(
-      issueAt(sql, m.index ?? 0, m[0].length, 'error', 'HARDCODED_DATE', `Date « en dur » (${m[0]}) : utilisez @run_date pour la fenêtre d'exécution`),
+      issueAt(
+        sql,
+        m.index ?? 0,
+        m[0].length,
+        'warning',
+        'HARDCODED_DATE',
+        `Date en dur (${m[0]}) : normal pour un seuil fixe ; si elle désigne le jour traité, utilisez @run_date, sinon chaque run d'Airflow relira ce même jour`,
+      ),
     );
   }
 

@@ -2,8 +2,8 @@
 
 Les contraintes structurelles (SELECT unique, colonne order_id) s'appuient sur
 les métadonnées du dry-run BigQuery, pas sur le texte : voir `query.py`. Ici,
-uniquement ce que BigQuery ne dit pas : seul @run_date est un paramètre, et il est obligatoire ;
-dates en dur.
+uniquement ce que BigQuery ne dit pas : seul @run_date est un paramètre, exigé à la soumission ;
+dates en dur (simple alerte).
 """
 
 import re
@@ -87,10 +87,12 @@ def check_params(sql: str) -> list[SqlIssue]:
     if not any(n == RUN_DATE_PARAM for n, _ in used):
         issues.append(
             SqlIssue(
-                severity="error",
+                # N'empêche pas de tester ; bloque la soumission (voir drafts.submit_draft) : c'est
+                # par @run_date qu'Airflow choisit le jour traité à chaque run et lors des rattrapages.
+                severity="warning",
                 code="RUN_DATE_MISSING",
-                message=f"La requête doit utiliser @{RUN_DATE_PARAM} pour délimiter les données traitées "
-                f"(ex. WHERE order_date = @{RUN_DATE_PARAM}).",
+                message=f"Pour la soumission, la requête devra utiliser @{RUN_DATE_PARAM} : c'est par lui "
+                f"qu'Airflow choisit le jour traité (ex. WHERE order_date = @{RUN_DATE_PARAM}).",
             )
         )
     return issues
@@ -103,9 +105,12 @@ def check_hardcoded_dates(sql: str) -> list[SqlIssue]:
         line, col = offset_to_line_col(sql, m.start())
         issues.append(
             SqlIssue(
-                severity="error",
+                # Simple alerte : une date fixe est légitime comme seuil (ex. comptes créés après le
+                # 1er janvier 2024), mais pas comme jour traité, qui serait alors le même à chaque run.
+                severity="warning",
                 code="HARDCODED_DATE",
-                message=f"Date « en dur » ({m.group(0)}) : utilisez @run_date pour la fenêtre d'exécution.",
+                message=f"Date en dur ({m.group(0)}) : normal pour un seuil fixe ; si elle désigne le jour "
+                "traité, utilisez @run_date, sinon chaque run d'Airflow relira ce même jour.",
                 line=line,
                 column=col,
                 length=len(m.group(0)),

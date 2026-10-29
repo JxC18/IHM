@@ -95,10 +95,11 @@ export function checkParams(sql: string): SqlIssue[] {
     });
   }
   if (!used.some((p) => p.name === RUN_DATE_PARAM)) {
+    // N'empêche pas de tester ; bloque la soumission : c'est par @run_date qu'Airflow choisit le jour traité.
     issues.push({
-      severity: 'error',
+      severity: 'warning',
       code: 'RUN_DATE_MISSING',
-      message: `La requête doit utiliser @${RUN_DATE_PARAM} pour délimiter les données traitées (ex. WHERE order_date = @${RUN_DATE_PARAM}).`,
+      message: `Pour la soumission, la requête devra utiliser @${RUN_DATE_PARAM} : c'est par lui qu'Airflow choisit le jour traité (ex. WHERE order_date = @${RUN_DATE_PARAM}).`,
     });
   }
   return issues;

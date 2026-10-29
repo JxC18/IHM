@@ -21,7 +21,7 @@ import {
 } from '../types';
 import { buildSeed, SCHEMA_VERSION, type MockDb, type MockDraft, type MockRule } from './seed';
 import { simulateDryRun, simulateExecution } from './bigquery';
-import { queryHash } from '../../lib/sql';
+import { checkParams, queryHash } from '../../lib/sql';
 import { addDays, isoDate } from '../../lib/format';
 
 const DB_KEY = 'rm.mock.db';
@@ -534,6 +534,9 @@ export function createMockApi(): Api {
       const last = draftTests(d.id)[0];
       if (!last || !last.success || last.phase !== 'EXECUTION' || last.queryHash !== queryHash(d.sqlQuery)) {
         throw new ApiError(409, 'Le dernier test doit être une exécution réussie portant sur la version actuelle de la requête.', 'TEST_REQUIRED');
+      }
+      if (checkParams(d.sqlQuery).some((i) => i.code === 'RUN_DATE_MISSING')) {
+        throw new ApiError(409, "La requête doit utiliser @run_date : c'est par lui qu'Airflow choisit le jour traité à chaque run et lors des rattrapages.", 'RUN_DATE_MISSING');
       }
       if (!nameAvailable(d.name, d.ruleId)) throw new ApiError(409, `Une règle nommée « ${d.name} » existe déjà.`, 'NAME_TAKEN');
       let r = db.rules.find((x) => x.ruleId === d.ruleId);
