@@ -12,7 +12,8 @@
   Interface seule, données simulées dans le navigateur (pas de Python nécessaire).
 
 .PARAMETER Install
-  Réinstallation propre : supprime backend\.venv et frontend\node_modules puis réinstalle tout.
+  Réinstallation propre : supprime l'environnement Python (backend\.venv, ou celui créé dans
+  %LOCALAPPDATA%\RulesManager si Documents est protégé) et frontend\node_modules, puis réinstalle tout.
   La base locale (backend\rules.db) et backend\.env sont conservés.
 
 .EXAMPLE
@@ -59,7 +60,27 @@ if (-not $Demo) {
     throw "Python 3.12 ou plus introuvable. Installer : winget install Python.Python.3.12, puis rouvrir PowerShell. (Ou lancer l'interface seule avec -Demo.)"
   }
   $exe = $python[0]; $rest = @($python | Select-Object -Skip 1)
-  Write-Host "  $(& $exe @rest --version)"
+  $pythonPath = & $exe @rest -c 'import sys; print(sys.executable)'
+  Write-Host "  $(& $exe @rest --version) ($pythonPath)"
+  if ($pythonPath -like '*\WindowsApps\*') {
+    Write-Host '  Attention : Python du Microsoft Store, source fréquente de problèmes. Préférer : winget install Python.Python.3.12' -ForegroundColor Yellow
+  }
+}
+
+# Environnement Python : backend\.venv, ou à défaut un dossier hors du projet. Sur les postes d'entreprise,
+# Documents est souvent protégé (accès contrôlé aux dossiers de Windows Defender, OneDrive) et python.exe
+# ne peut pas y créer d'environnement. Un suffixe propre à ce dossier évite de mélanger deux copies du projet.
+$sha = [System.Security.Cryptography.SHA256]::Create()  # SHA-256 : MD5 est interdit sur les postes en mode FIPS
+$suffix = -join ($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($root)) | Select-Object -First 4 | ForEach-Object { $_.ToString('x2') })
+$venvDirs = @((Join-Path $backend '.venv'), (Join-Path $env:LOCALAPPDATA "RulesManager\venv-$suffix"))
+
+# Crée un environnement Python ; en cas d'échec, retire ce qui a été créé à moitié.
+function New-Venv($dir) {
+  # Out-Host : la sortie de python ne doit pas se mêler à la valeur renvoyée par la fonction.
+  try { & $exe @rest -m venv $dir | Out-Host } catch { Write-Host "  $_" }
+  if (Test-Path (Join-Path $dir 'Scripts\python.exe')) { return $true }
+  Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+  return $false
 }
 
 # Supprime un dossier d'installation ; échoue clairement s'il est verrouillé (application encore ouverte).
@@ -72,7 +93,7 @@ function Reset-Folder($path, $label) {
 
 if ($Install) {
   Step 'Réinstallation propre demandée (-Install)'
-  if (-not $Demo) { Reset-Folder (Join-Path $backend '.venv') 'backend\.venv' }
+  if (-not $Demo) { foreach ($dir in $venvDirs) { Reset-Folder $dir $dir } }
   Reset-Folder (Join-Path $frontend 'node_modules') 'frontend\node_modules'
 }
 
@@ -81,13 +102,19 @@ $api = $null
 if (-not $Demo) {
   Push-Location $backend
   try {
-    $venvPython = Join-Path $backend '.venv\Scripts\python.exe'
-    if (-not (Test-Path $venvPython)) {
-      Step 'Création de l''environnement Python (backend\.venv)'
-      & $exe @rest -m venv .venv
-      if ($LASTEXITCODE -ne 0) { throw 'Création de backend\.venv impossible.' }
+    $venvDir = $venvDirs | Where-Object { Test-Path (Join-Path $_ 'Scripts\python.exe') } | Select-Object -First 1
+    if (-not $venvDir) {
+      foreach ($dir in $venvDirs) {
+        Step "Création de l'environnement Python ($dir)"
+        if (New-Venv $dir) { $venvDir = $dir; break }
+        Write-Host '  Échec à cet emplacement.' -ForegroundColor Yellow
+      }
+      if (-not $venvDir) {
+        throw "Impossible de créer l'environnement Python, même hors du dossier Documents. Vérifier l'installation de Python (winget install Python.Python.3.12) ou demander au service informatique d'autoriser python.exe."
+      }
     }
-    $stamp = Join-Path $backend '.venv\.installed'
+    $venvPython = Join-Path $venvDir 'Scripts\python.exe'
+    $stamp = Join-Path $venvDir '.installed'
     if (NeedsUpdate $stamp (Join-Path $backend 'pyproject.toml')) {
       Step 'Installation des dépendances Python'
       & $venvPython -m pip install --disable-pip-version-check -e '.[dev]'
