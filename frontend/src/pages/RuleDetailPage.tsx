@@ -186,8 +186,6 @@ function DefinitionTab({ r, onTested }: { r: RuleDetail; onTested: () => void })
         </div>
         <div className="card-pad stack">
           <SqlEditor ref={editor} value={r.sqlQuery} readOnly issues={issues} ariaLabel="Requête SQL (lecture seule)" />
-        </div>
-        <div className="card-pad test-zone">
           <TestActions t={test} />
         </div>
       </section>

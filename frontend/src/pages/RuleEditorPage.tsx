@@ -438,9 +438,9 @@ export function RuleEditorPage() {
                 ))}
               </ul>
             )}
-          </div>
-          <div className="card-pad test-zone" id="sec-test">
-            <TestActions t={test} />
+            <div id="sec-test">
+              <TestActions t={test} />
+            </div>
           </div>
         </section>
 
