@@ -12,7 +12,8 @@
   Interface seule, données simulées dans le navigateur (pas de Python nécessaire).
 
 .PARAMETER Install
-  Force la réinstallation des dépendances.
+  Réinstallation propre : supprime backend\.venv et frontend\node_modules puis réinstalle tout.
+  La base locale (backend\rules.db) et backend\.env sont conservés.
 
 .EXAMPLE
   .\run.cmd                 # double-clic possible
@@ -61,6 +62,20 @@ if (-not $Demo) {
   Write-Host "  $(& $exe @rest --version)"
 }
 
+# Supprime un dossier d'installation ; échoue clairement s'il est verrouillé (application encore ouverte).
+function Reset-Folder($path, $label) {
+  if (-not (Test-Path $path)) { return }
+  Write-Host "  Suppression de $label…"
+  try { Remove-Item -Recurse -Force $path }
+  catch { throw "Impossible de supprimer $label : fermer les autres fenêtres de Rules Manager (API, interface, VS Code) puis relancer." }
+}
+
+if ($Install) {
+  Step 'Réinstallation propre demandée (-Install)'
+  if (-not $Demo) { Reset-Folder (Join-Path $backend '.venv') 'backend\.venv' }
+  Reset-Folder (Join-Path $frontend 'node_modules') 'frontend\node_modules'
+}
+
 # ---------------------------------------------------------------- API
 $api = $null
 if (-not $Demo) {
@@ -73,9 +88,9 @@ if (-not $Demo) {
       if ($LASTEXITCODE -ne 0) { throw 'Création de backend\.venv impossible.' }
     }
     $stamp = Join-Path $backend '.venv\.installed'
-    if ($Install -or (NeedsUpdate $stamp (Join-Path $backend 'pyproject.toml'))) {
+    if (NeedsUpdate $stamp (Join-Path $backend 'pyproject.toml')) {
       Step 'Installation des dépendances Python'
-      & $venvPython -m pip install --disable-pip-version-check -q -e '.[dev]'
+      & $venvPython -m pip install --disable-pip-version-check -e '.[dev]'
       if ($LASTEXITCODE -ne 0) { throw 'pip install a échoué (voir ci-dessus).' }
       Set-Content -Path $stamp -Value (Get-Date -Format o)
     }
@@ -117,7 +132,7 @@ if (-not $Demo) {
 # ---------------------------------------------------------------- interface
 try {
   Push-Location $frontend
-  if ($Install -or -not (Test-Path 'node_modules') -or (NeedsUpdate 'node_modules\.package-lock.json' 'package-lock.json')) {
+  if (-not (Test-Path 'node_modules') -or (NeedsUpdate 'node_modules\.package-lock.json' 'package-lock.json')) {
     Step 'Installation des dépendances npm'
     npm install --no-fund --no-audit
     if ($LASTEXITCODE -ne 0) { throw 'npm install a échoué (voir ci-dessus).' }

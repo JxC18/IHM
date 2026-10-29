@@ -76,7 +76,7 @@ dans PowerShell :
 ```powershell
 .\run.cmd            # API + interface, navigateur ouvert sur http://localhost:5173
 .\run.cmd -Demo      # interface seule, données simulées (Python inutile)
-.\run.cmd -Install   # forcer la réinstallation des dépendances
+.\run.cmd -Install   # réinstallation propre (supprime backend\.venv et frontend\node_modules ; base et .env conservés)
 ```
 Le premier lancement installe tout (quelques minutes) et crée `backend\.env` (SQLite, BigQuery simulé) s'il
 n'existe pas ; les suivants démarrent directement. Journal de l'API : `backend\api.log`, `backend\api-errors.log`.
