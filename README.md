@@ -167,22 +167,27 @@ en attendant, l'API se teste seule via http://localhost:8000/docs.
 
 ### Créer les tables BigQuery (mode `real`, une seule fois)
 
-Prérequis : Google Cloud SDK (`bq`) et `gcloud auth login`. `FEEDBACK_TABLE` est la table du prestataire
-(`dataset.table`, sans le projet), lue par la vue `v_rule_performance`. Le script peut être rejoué.
+Prérequis : Google Cloud SDK (`bq`) et `gcloud auth login`. Le script lit le projet, le dataset, la région et la
+table du prestataire dans `backend/.env` ; un paramètre ou une variable d'environnement les remplace.
+```ini
+RM_GCP_PROJECT=mon-projet
+RM_BQ_DATASET=fraud_rules
+RM_BQ_LOCATION=europe-west9                    # valeur par défaut
+RM_BQ_FEEDBACK_TABLE=prestataire.feedback      # dataset.table, sans le projet (vue v_rule_performance)
+```
 
 macOS / Linux / WSL (nécessite aussi `envsubst` : `sudo apt install -y gettext-base`) :
 ```bash
-cd infra/bigquery
-PROJECT=mon-projet DATASET=fraud_rules FEEDBACK_TABLE=prestataire.feedback ./apply.sh
+infra/bigquery/apply.sh
+# ou, pour remplacer une valeur : PROJECT=autre-projet infra/bigquery/apply.sh
 ```
 
 Windows (PowerShell) :
 ```powershell
-cd infra\bigquery
-powershell -ExecutionPolicy Bypass -File .\apply.ps1 -Project mon-projet -Dataset fraud_rules -FeedbackTable prestataire.feedback
+powershell -ExecutionPolicy Bypass -File infra\bigquery\apply.ps1
+# ou : ... apply.ps1 -Project autre-projet -FeedbackTable prestataire.feedback
 ```
-`-ExecutionPolicy Bypass` évite le blocage des scripts téléchargés (archive .zip). Projet et dataset doivent être
-les mêmes que `RM_GCP_PROJECT` et `RM_BQ_DATASET` dans `backend/.env`.
+`-ExecutionPolicy Bypass` évite le blocage des scripts téléchargés (archive .zip). Le script peut être rejoué.
 
 ### Commandes du Makefile (macOS / Linux)
 
@@ -200,7 +205,8 @@ les mêmes que `RM_GCP_PROJECT` et `RM_BQ_DATASET` dans `backend/.env`.
 |---|---|---|
 | `RM_DATABASE_URL` | base applicative | PostgreSQL local |
 | `RM_BIGQUERY_MODE` | `fake` (sans GCP) ou `real` | `fake` |
-| `RM_GCP_PROJECT`, `RM_BQ_DATASET` | projet et dataset du contrat de données | — / `fraud_rules` |
+| `RM_GCP_PROJECT`, `RM_BQ_DATASET`, `RM_BQ_LOCATION` | projet, dataset et région du contrat de données | — / `fraud_rules` / `europe-west9` |
+| `RM_BQ_FEEDBACK_TABLE` | table de retour du prestataire (`dataset.table`), pour créer la vue des indicateurs | — |
 | `RM_MAX_BYTES_BILLED`, `RM_JOB_TIMEOUT_MS`, `RM_MAX_RESULTS` | garde-fous des tests (F3) | 50 Go, 60 s, 100 |
 | `RM_MONTHLY_BUDGET_BYTES` | budget de scan mensuel par utilisateur | 1 To (Q5) |
 | `RM_NOTIFY_WEBHOOK_URL` | notification de l'équipe data à la soumission | vide = log (Q6) |

@@ -24,8 +24,10 @@ class Settings(BaseSettings):
     bigquery_mode: Literal["fake", "real"] = "fake"
     gcp_project: str = ""
     bq_dataset: str = "fraud_rules"
-    bq_feedback_table: str = "provider_feedback"  # à confirmer (PRD Q2)
-    bq_location: str = "EU"
+    # Table de retour du prestataire (dataset.table), lue par la vue v_rule_performance (PRD Q2).
+    # Utilisée par infra/bigquery/apply.sh / apply.ps1 pour créer la vue.
+    bq_feedback_table: str = ""
+    bq_location: str = "europe-west9"
 
     # Garde-fous F3 — réglables sans redéploiement (PRD R4).
     max_bytes_billed: int = 50 * 10**9
