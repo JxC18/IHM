@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { RuleDetail, RuleVersion, SqlIssue } from '../api/types';
 import { SqlEditor, type SqlEditorHandle } from '../components/SqlEditor';
-import { TestPanel } from '../components/TestPanel';
+import { TestActions, TestResults, useQueryTest } from '../components/TestPanel';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { usePageTitle } from '../nav/history';
 import { DiffView } from '../components/DiffView';
@@ -150,6 +150,7 @@ export function RuleDetailPage() {
 function DefinitionTab({ r, onTested }: { r: RuleDetail; onTested: () => void }) {
   const editor = useRef<SqlEditorHandle>(null);
   const [issues, setIssues] = useState<SqlIssue[]>();
+  const test = useQueryTest({ sql: r.sqlQuery, target: { ruleId: r.ruleId }, onIssues: setIssues, onTested });
   return (
     <div className="stack">
       <div className="card card-pad stack" style={{ gap: 12 }}>
@@ -187,15 +188,10 @@ function DefinitionTab({ r, onTested }: { r: RuleDetail; onTested: () => void })
           <SqlEditor ref={editor} value={r.sqlQuery} readOnly issues={issues} ariaLabel="Requête SQL (lecture seule)" />
         </div>
         <div className="card-pad test-zone">
-          <TestPanel
-            sql={r.sqlQuery}
-            target={{ ruleId: r.ruleId }}
-            onIssues={setIssues}
-            onGoTo={(l, c) => editor.current?.goTo(l, c)}
-            onTested={onTested}
-          />
+          <TestActions t={test} />
         </div>
       </section>
+      <TestResults t={test} onGoTo={(l, c) => editor.current?.goTo(l, c)} />
     </div>
   );
 }

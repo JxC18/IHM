@@ -1604,7 +1604,14 @@ details summary {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: 10px 14px;
+}
+/* Boutons à droite, comme ceux d'un formulaire. */
+.test-buttons {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
 }
 .test-inline {
   font-size: 13px;
@@ -1617,7 +1624,11 @@ details summary {
   color: var(--bad);
 }
 .test-hint {
-  margin: -6px 0 0;
+  min-width: 0;
+  flex: 1 1 260px;
+}
+.test-inline.warn {
+  color: var(--warn);
 }
 .test-status {
   display: flex;
@@ -1641,10 +1652,6 @@ details summary {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
 }
 .test-kpis {
   display: grid;

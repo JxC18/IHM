@@ -6,12 +6,11 @@ import { fmtBytes, fmtDuration, fmtInt, fmtLongDate, fmtPct, isoDate } from '../
 import { queryHash } from '../lib/sql';
 import { Alert, Spinner } from './ui';
 
-interface Props {
+interface Options {
   sql: string;
   /** Brouillon ou règle testée ; absent : test libre (rattaché au brouillon à son premier enregistrement). */
   target?: TestTarget;
   onIssues: (issues: SqlIssue[]) => void;
-  onGoTo: (line: number, column?: number) => void;
   /** Appelé après chaque test (pour rafraîchir l'historique / l'éligibilité à la soumission). */
   onTested?: () => void;
   /** Appelé après une exécution réussie, avec l'empreinte de la requête testée. */
@@ -20,7 +19,11 @@ interface Props {
 
 type Phase = 'idle' | 'dry-running' | 'dry-done' | 'executing' | 'exec-done';
 
-export function TestPanel({ sql, target, onIssues, onGoTo, onTested, onExecuted }: Props) {
+/**
+ * État du test d'une requête, partagé entre les boutons (sous l'éditeur, `TestActions`) et le bloc de
+ * résultat (à part, `TestResults`) : « Valider la syntaxe » (dry-run gratuit) puis « Tester la requête ».
+ */
+export function useQueryTest({ sql, target, onIssues, onTested, onExecuted }: Options) {
   const guard = useAsync(() => api.getGuardrails(), []);
   const [phase, setPhase] = useState<Phase>('idle');
   const [dry, setDry] = useState<DryRunResult>();
@@ -28,18 +31,6 @@ export function TestPanel({ sql, target, onIssues, onGoTo, onTested, onExecuted 
   const [exec, setExec] = useState<ExecutionResult>();
   const [error, setError] = useState<string>();
   const [testedHash, setTestedHash] = useState<string>();
-
-  // Quand un résultat apparaît, la page descend jusqu'à lui (sans animation si l'utilisateur la refuse).
-  const statusRef = useRef<HTMLDivElement>(null);
-  const resultRef = useRef<HTMLDivElement>(null);
-  const reveal = (el: HTMLElement | null, block: ScrollLogicalPosition) =>
-    el?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block });
-  useEffect(() => {
-    if (dry && !exec) reveal(statusRef.current, 'nearest');
-  }, [dry, exec]);
-  useEffect(() => {
-    if (exec) reveal(resultRef.current, 'start');
-  }, [exec]);
 
   const hash = queryHash(sql);
   const stale = testedHash !== undefined && testedHash !== hash;
@@ -78,48 +69,96 @@ export function TestPanel({ sql, target, onIssues, onGoTo, onTested, onExecuted 
     }
   }
 
-  const g = guard.data;
-  const errors = dry?.issues.filter((i) => i.severity === 'error') ?? [];
-  const warnings = dry?.issues.filter((i) => i.severity === 'warning') ?? [];
   const busy = phase === 'dry-running' || phase === 'executing';
-  const canExec = !!dry?.ok && !dry.exceedsBytesLimit && !stale && !busy;
+  return {
+    sql,
+    phase,
+    dry,
+    exec,
+    error,
+    stale,
+    busy,
+    guardrails: guard.data,
+    canExec: !!dry?.ok && !dry.exceedsBytesLimit && !stale && !busy,
+    runDry,
+    runExec,
+  };
+}
 
+export type QueryTest = ReturnType<typeof useQueryTest>;
+
+/** Boutons sous l'éditeur, alignés à droite comme ceux d'un formulaire ; l'état de la validation à gauche. */
+export function TestActions({ t }: { t: QueryTest }) {
+  const { dry, stale, busy, phase } = t;
   return (
-    <div className="stack test-panel">
-      {/* Deux actions sous l'éditeur : valider la syntaxe (dry-run gratuit), puis tester (exécution). */}
-      <div className="test-toolbar">
-        <button type="button" className="btn" onClick={runDry} disabled={busy || !sql.trim()}>
+    <div className="test-toolbar">
+      <span className="small test-hint">
+        {stale ? (
+          <span className="test-inline warn">⚠ Requête modifiée depuis la validation : validez à nouveau.</span>
+        ) : dry && !dry.ok && !busy ? (
+          <span className="test-inline bad">
+            ✕ Syntaxe invalide · {dry.issues.filter((i) => i.severity === 'error').length} erreur
+            {dry.issues.filter((i) => i.severity === 'error').length > 1 ? 's' : ''} (détail ci-dessous)
+          </span>
+        ) : dry?.ok && !busy ? (
+          <span className={`test-inline ${dry.exceedsBytesLimit ? 'bad' : 'good'}`}>
+            {dry.exceedsBytesLimit ? '✕' : '✓'} Syntaxe valide · {fmtBytes(dry.bytesProcessed ?? 0)} à scanner
+          </span>
+        ) : (
+          <span className="muted">
+            Exécutée telle quelle aujourd'hui ({fmtLongDate(isoDate(new Date()))}) ; la veille :{' '}
+            <span className="mono">DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)</span>
+          </span>
+        )}
+      </span>
+      <span className="test-buttons">
+        <button type="button" className="btn" onClick={t.runDry} disabled={busy || !t.sql.trim()}>
           {phase === 'dry-running' ? <span className="spinner" aria-hidden="true" /> : <span aria-hidden="true">✓</span>} Valider la syntaxe
         </button>
         <button
           type="button"
           className="btn btn-primary"
-          onClick={runExec}
-          disabled={!canExec}
-          title={canExec ? undefined : dry?.ok && dry.exceedsBytesLimit ? 'Volume à scanner au-delà du plafond' : "Validez d'abord la syntaxe de la requête actuelle"}
+          onClick={t.runExec}
+          disabled={!t.canExec}
+          title={t.canExec ? undefined : dry?.ok && dry.exceedsBytesLimit ? 'Volume à scanner au-delà du plafond' : "Validez d'abord la syntaxe de la requête actuelle"}
         >
           {phase === 'executing' ? <span className="spinner" aria-hidden="true" /> : <span aria-hidden="true">▶</span>} Tester la requête
         </button>
-        {dry?.ok && !stale && !busy && (
-          <span className={`test-inline ${dry.exceedsBytesLimit ? 'bad' : 'good'}`}>
-            {dry.exceedsBytesLimit ? '✕' : '✓'} Syntaxe valide · {fmtBytes(dry.bytesProcessed ?? 0)} à scanner
-          </span>
-        )}
+      </span>
+    </div>
+  );
+}
+
+/** Bloc de résultat, distinct du bloc de la requête ; absent tant que rien n'a été lancé. */
+export function TestResults({ t, onGoTo }: { t: QueryTest; onGoTo: (line: number, column?: number) => void }) {
+  const { dry, exec, phase, error, stale } = t;
+  const g = t.guardrails;
+  const errors = dry?.issues.filter((i) => i.severity === 'error') ?? [];
+  const warnings = dry?.issues.filter((i) => i.severity === 'warning') ?? [];
+
+  // Quand un résultat apparaît, la page descend jusqu'à lui (sans animation si l'utilisateur la refuse).
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (dry || exec || error)
+      ref.current?.scrollIntoView({
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+        block: exec ? 'start' : 'nearest',
+      });
+  }, [dry, exec, error]);
+
+  // Une validation réussie s'affiche à côté des boutons : le bloc n'apparaît que s'il a quelque chose à dire.
+  const shown = !!error || !!exec || phase === 'executing' || (!!dry && (!dry.ok || dry.exceedsBytesLimit || warnings.length > 0));
+  if (!shown) return null;
+  return (
+    <section className="card test-anchor" ref={ref} aria-labelledby="test-results-title" aria-live="polite">
+      <div className="card-head">
+        <div>
+          <h2 id="test-results-title">Résultat du test</h2>
+          {stale && <p>La requête a changé depuis : ce résultat porte sur la version précédente.</p>}
+        </div>
       </div>
-      <p className="small muted test-hint">
-        La requête s'exécute telle quelle aujourd'hui ({fmtLongDate(isoDate(new Date()))}) ; pour la veille :{' '}
-        <span className="mono">DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)</span>.
-      </p>
-
-      {stale && (
-        <Alert kind="warn" title="La requête a changé depuis la dernière validation.">
-          Validez à nouveau la syntaxe, puis testez : la soumission exige un test réussi sur la version courante.
-        </Alert>
-      )}
-      {error && <Alert kind="error" title={error} />}
-
-      <div aria-live="polite" className="stack" style={{ gap: 12 }} ref={statusRef}>
-        {phase === 'dry-running' && <Spinner label="Validation de la requête (dry-run gratuit)…" />}
+      <div className="card-pad stack" style={{ gap: 12 }}>
+        {error && <Alert kind="error" title={error} />}
 
         {/* Requête refusée : les erreurs d'abord, cliquables vers la ligne fautive */}
         {dry && !dry.ok && (
@@ -132,19 +171,14 @@ export function TestPanel({ sql, target, onIssues, onGoTo, onTested, onExecuted 
             </ul>
           </div>
         )}
-
-        {dry?.ok && dry.exceedsBytesLimit && !stale && (
+        {dry?.ok && dry.exceedsBytesLimit && (
           <Alert kind="error" title={`Test impossible : ${fmtBytes(dry.bytesProcessed ?? 0)} à scanner, au-delà du plafond de ${g ? fmtBytes(g.maxBytesBilled) : '…'}.`}>
             Restreignez la période ou les tables scannées.
           </Alert>
         )}
         {phase === 'executing' && <Spinner label="Exécution et recoupement avec les autres règles…" />}
 
-        {exec && (
-          <div ref={resultRef} className="test-anchor">
-            <ExecSummary exec={exec} />
-          </div>
-        )}
+        {exec && <ExecSummary exec={exec} />}
 
         {dry && warnings.length > 0 && (
           <ul className="issue-list">
@@ -196,7 +230,7 @@ export function TestPanel({ sql, target, onIssues, onGoTo, onTested, onExecuted 
           </details>
         )}
       </div>
-    </div>
+    </section>
   );
 }
 

@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { CRITICALITIES, SCHEDULES, type Draft, type RuleDetail, type RuleInput, type SqlIssue } from '../api/types';
 import { SqlEditor, type SqlEditorHandle } from '../components/SqlEditor';
-import { TestPanel } from '../components/TestPanel';
+import { TestActions, TestResults, useQueryTest } from '../components/TestPanel';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { usePageTitle } from '../nav/history';
 import { Alert, Spinner, StatusBadge } from '../components/ui';
@@ -67,6 +67,13 @@ export function RuleEditorPage() {
   const [saving, setSaving] = useState<'save' | 'submit' | 'delete' | null>(null);
   const [error, setError] = useState<string>();
   const editor = useRef<SqlEditorHandle>(null);
+  // Le test se pilote sous l'éditeur (boutons) et s'affiche dans un bloc à part (résultat).
+  const test = useQueryTest({
+    sql: form.sqlQuery,
+    target: draft ? { draftId: draft.id } : rule ? { excludeRuleId: rule.ruleId } : undefined,
+    onIssues: setDryIssues,
+    onExecuted: setExecHash,
+  });
   const targetRuleId = draft?.ruleId ?? rule?.ruleId;
 
   // Chargement + proposition de restaurer un brouillon non enregistré (localStorage).
@@ -432,17 +439,12 @@ export function RuleEditorPage() {
               </ul>
             )}
           </div>
-          {/* Test dans le même bloc que la requête : on modifie, on teste, on voit le résultat. */}
           <div className="card-pad test-zone" id="sec-test">
-            <TestPanel
-              sql={form.sqlQuery}
-              target={draft ? { draftId: draft.id } : rule ? { excludeRuleId: rule.ruleId } : undefined}
-              onIssues={setDryIssues}
-              onGoTo={(l, c) => editor.current?.goTo(l, c)}
-              onExecuted={setExecHash}
-            />
+            <TestActions t={test} />
           </div>
         </section>
+
+        <TestResults t={test} onGoTo={(l, c) => editor.current?.goTo(l, c)} />
 
         <div className="row">
           <span className="small muted">
