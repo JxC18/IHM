@@ -20,17 +20,54 @@
   .\run.cmd                 # double-clic possible
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File .\run.ps1 -Demo
+
+.PARAMETER ApiPort
+  Premier port essayé pour l'API (8000 par défaut) ; s'il est occupé, le suivant libre est pris.
+
+.PARAMETER WebPort
+  Premier port essayé pour l'interface (5173 par défaut) ; même principe.
 #>
 param(
   [switch]$Demo,
   [switch]$Install,
-  [int]$ApiPort = 8000
+  [int]$ApiPort = 8000,
+  [int]$WebPort = 5173
 )
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $backend = Join-Path $root 'backend'
 $frontend = Join-Path $root 'frontend'
+
+# Vrai si le port est libre en local (IPv4 et, si la machine l'a, IPv6 : Vite écoute sur « localhost »).
+function Test-PortFree([int]$port) {
+  foreach ($address in @([System.Net.IPAddress]::Loopback, [System.Net.IPAddress]::IPv6Loopback)) {
+    $listener = [System.Net.Sockets.TcpListener]::new($address, $port)
+    try { $listener.Start() }
+    catch {
+      # PowerShell enveloppe l'erreur .NET : on regarde l'exception d'origine.
+      $e = $_.Exception
+      if ($e.InnerException) { $e = $e.InnerException }
+      # Occupé, ou réservé par Windows (Hyper-V, WSL) : AccessDenied.
+      $code = if ($e -is [System.Net.Sockets.SocketException]) { "$($e.SocketErrorCode)" } else { '' }
+      if ($code -eq 'AddressAlreadyInUse' -or $code -eq 'AccessDenied') { return $false }
+      # Autre erreur (IPv6 absent…) : rien ne peut écouter à cette adresse, on l'ignore.
+    }
+    finally { $listener.Stop() }
+  }
+  return $true
+}
+
+# Premier port libre à partir de $start ; signale quand le port demandé était pris.
+function Get-FreePort([int]$start, [string]$label) {
+  for ($port = $start; $port -lt $start + 50; $port++) {
+    if (Test-PortFree $port) {
+      if ($port -ne $start) { Write-Host "  Port $start occupé : $label sur le port $port." -ForegroundColor Yellow }
+      return $port
+    }
+  }
+  throw "Aucun port libre entre $start et $($start + 49) pour $label."
+}
 
 function Step($text) { Write-Host "`n▶ $text" -ForegroundColor Cyan }
 
@@ -136,20 +173,21 @@ if (-not $Demo) {
     & $venvPython -m alembic upgrade head
     if ($LASTEXITCODE -ne 0) { throw 'La migration de la base a échoué (voir ci-dessus).' }
 
-    Step "Démarrage de l'API sur http://localhost:$ApiPort (journal : backend\api.log)"
+    $ApiPort = Get-FreePort $ApiPort "l'API"
+    Step "Démarrage de l'API sur http://127.0.0.1:$ApiPort (journal : backend\api.log)"
     $api = Start-Process -FilePath $venvPython -WorkingDirectory $backend -NoNewWindow -PassThru `
-      -ArgumentList '-m', 'uvicorn', 'app.main:app', '--port', $ApiPort `
+      -ArgumentList '-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', $ApiPort `
       -RedirectStandardOutput (Join-Path $backend 'api.log') -RedirectStandardError (Join-Path $backend 'api-errors.log')
 
     # On attend que l'API réponde avant d'ouvrir l'interface.
     $ready = $false
     for ($i = 0; $i -lt 40 -and -not $api.HasExited; $i++) {
-      try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 "http://localhost:$ApiPort/healthz" | Out-Null; $ready = $true; break }
+      try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 "http://127.0.0.1:$ApiPort/healthz" | Out-Null; $ready = $true; break }
       catch { Start-Sleep -Milliseconds 500 }
     }
     if (-not $ready) {
       Get-Content (Join-Path $backend 'api-errors.log') -Tail 20 -ErrorAction SilentlyContinue | Write-Host
-      throw "L'API ne répond pas (voir backend\api-errors.log). Port $ApiPort déjà utilisé ? Essayer -ApiPort 8001."
+      throw "L'API ne répond pas (voir backend\api-errors.log)."
     }
     Write-Host '  API prête.'
   }
@@ -166,11 +204,13 @@ try {
   }
 
   $env:VITE_API_MODE = if ($Demo) { 'mock' } else { 'http' }
-  $env:API_URL = "http://localhost:$ApiPort"
-  Step $(if ($Demo) { 'Interface en mode démo (données simulées)' } else { "Interface branchée sur l'API" })
-  Write-Host '  http://localhost:5173 s''ouvre dans le navigateur. Ctrl+C pour tout arrêter.' -ForegroundColor Green
+  # 127.0.0.1 plutôt que localhost : Node résout localhost en IPv6 (::1), où l'API n'écoute pas.
+  $env:API_URL = "http://127.0.0.1:$ApiPort"
+  $WebPort = Get-FreePort $WebPort "l'interface"
+  Step $(if ($Demo) { 'Interface en mode démo (données simulées)' } else { "Interface branchée sur l'API (port $ApiPort)" })
+  Write-Host "  http://localhost:$WebPort s'ouvre dans le navigateur. Ctrl+C pour tout arrêter." -ForegroundColor Green
   # Vite lancé directement (pas via npm.cmd) : Ctrl+C arrête sans la question « Terminer le programme de commandes ? ».
-  node node_modules\vite\bin\vite.js --open
+  node node_modules\vite\bin\vite.js --open --port $WebPort --strictPort
 }
 finally {
   Pop-Location

@@ -10,7 +10,8 @@ export default defineConfig({
     // En mode "http", le front parle à l'API FastAPI via ce proxy (préfixe /api retiré, comme en production).
     proxy: {
       '/api': {
-        target: process.env.API_URL ?? 'http://localhost:8000',
+        // 127.0.0.1 : Node résout « localhost » en IPv6 (::1) alors qu'uvicorn écoute en IPv4.
+        target: process.env.API_URL ?? 'http://127.0.0.1:8000',
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
     },

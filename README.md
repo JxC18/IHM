@@ -80,7 +80,8 @@ dans PowerShell :
 ```
 Le premier lancement installe tout (quelques minutes) et crée `backend\.env` (SQLite, BigQuery simulé) s'il
 n'existe pas ; les suivants démarrent directement. Journal de l'API : `backend\api.log`, `backend\api-errors.log`.
-`Ctrl+C` arrête l'interface et l'API. Si Python ne peut pas créer `backend\.venv` (dossier *Documents*
+`Ctrl+C` arrête l'interface et l'API. Si le port 8000 (API) ou 5173 (interface) est occupé, le script prend
+le suivant libre et l'indique. Si Python ne peut pas créer `backend\.venv` (dossier *Documents*
 protégé par Windows Defender ou synchronisé par OneDrive), l'environnement est créé dans
 `%LOCALAPPDATA%\RulesManager` et réutilisé ensuite automatiquement. Les étapes 3a et 3b ci-dessous détaillent ce que fait le script.
 
