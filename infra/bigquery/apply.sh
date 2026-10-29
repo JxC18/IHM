@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Crée les tables du contrat de données (Lot 3). Peut être rejoué. Usage :
 #   ./apply.sh                                   # valeurs lues dans backend/.env
-#   PROJECT=mon-projet DATASET=fraud_rules FEEDBACK_TABLE=dataset.table ./apply.sh
+#   PROJECT=mon-projet DATASET=fraud_rules FEEDBACK_TABLE=dataset.table ./apply.sh   # ou projet.dataset.table
 # Ordre de priorité : variable d'environnement, puis backend/.env (RM_GCP_PROJECT, RM_BQ_DATASET,
 # RM_BQ_FEEDBACK_TABLE, RM_BQ_LOCATION), puis valeur par défaut (région europe-west9).
 set -euo pipefail
@@ -21,6 +21,9 @@ DATASET="${DATASET:-$(from_env RM_BQ_DATASET)}"
 FEEDBACK_TABLE="${FEEDBACK_TABLE:-$(from_env RM_BQ_FEEDBACK_TABLE)}"
 LOCATION="${LOCATION:-$(from_env RM_BQ_LOCATION)}"
 LOCATION="${LOCATION:-europe-west9}"
+# La table du prestataire peut être dans un autre projet : « projet.dataset.table » est gardé tel quel,
+# « dataset.table » est complété avec le projet de la plateforme.
+case "$FEEDBACK_TABLE" in *.*.*) ;; ?*) FEEDBACK_TABLE="$PROJECT.$FEEDBACK_TABLE" ;; esac
 export PROJECT DATASET FEEDBACK_TABLE
 
 missing=()

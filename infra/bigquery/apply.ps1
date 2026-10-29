@@ -18,7 +18,7 @@
 param(
   [string]$Project = $env:PROJECT,
   [string]$Dataset = $env:DATASET,
-  # Table de retour du prestataire, au format dataset.table (sans le projet) : utilisée par v_rule_performance.
+  # Table de retour du prestataire (dataset.table, ou projet.dataset.table si elle est dans un autre projet).
   [string]$FeedbackTable = $env:FEEDBACK_TABLE,
   [string]$Location = $env:LOCATION,
   [string]$EnvFile = (Join-Path $PSScriptRoot '..\..\backend\.env')
@@ -47,6 +47,10 @@ if (-not $Project) { $missing += 'Project (ou RM_GCP_PROJECT dans backend/.env)'
 if (-not $Dataset) { $missing += 'Dataset (ou RM_BQ_DATASET)' }
 if (-not $FeedbackTable) { $missing += 'FeedbackTable (ou RM_BQ_FEEDBACK_TABLE)' }
 if ($missing) { throw "Paramètres manquants : $($missing -join ', ')" }
+
+# La table du prestataire peut être dans un autre projet : « projet.dataset.table » est gardé tel quel,
+# « dataset.table » est complété avec le projet de la plateforme.
+if (($FeedbackTable.ToCharArray() | Where-Object { $_ -eq '.' }).Count -lt 2) { $FeedbackTable = "$Project.$FeedbackTable" }
 
 if (-not (Get-Command bq -ErrorAction SilentlyContinue)) {
   throw "Commande bq introuvable : installer le Google Cloud SDK (https://cloud.google.com/sdk/docs/install), puis rouvrir PowerShell."

@@ -190,7 +190,7 @@ table du prestataire dans `backend/.env` ; un paramètre ou une variable d'envir
 RM_GCP_PROJECT=mon-projet
 RM_BQ_DATASET=fraud_rules
 RM_BQ_LOCATION=europe-west9                    # valeur par défaut
-RM_BQ_FEEDBACK_TABLE=prestataire.feedback      # dataset.table, sans le projet (vue v_rule_performance)
+RM_BQ_FEEDBACK_TABLE=prestataire.feedback      # dataset.table, ou projet.dataset.table (vue v_rule_performance)
 ```
 
 macOS / Linux / WSL (nécessite aussi `envsubst` : `sudo apt install -y gettext-base`) :
@@ -223,7 +223,7 @@ powershell -ExecutionPolicy Bypass -File infra\bigquery\apply.ps1
 | `RM_DATABASE_URL` | base applicative | PostgreSQL local |
 | `RM_BIGQUERY_MODE` | `fake` (sans GCP) ou `real` | `fake` |
 | `RM_GCP_PROJECT`, `RM_BQ_DATASET`, `RM_BQ_LOCATION` | projet, dataset et région du contrat de données | — / `fraud_rules` / `europe-west9` |
-| `RM_BQ_FEEDBACK_TABLE` | table de retour du prestataire (`dataset.table`), pour créer la vue des indicateurs | — |
+| `RM_BQ_FEEDBACK_TABLE` | table de retour du prestataire (`dataset.table` ou `projet.dataset.table`), pour créer la vue des indicateurs | — |
 | `RM_MAX_BYTES_BILLED`, `RM_JOB_TIMEOUT_MS`, `RM_MAX_RESULTS` | garde-fous des tests (F3) | 50 Go, 60 s, 100 |
 | `RM_MONTHLY_BUDGET_BYTES` | budget de scan mensuel par utilisateur | 1 To (Q5) |
 | `RM_NOTIFY_WEBHOOK_URL` | notification de l'équipe data à la soumission | vide = log (Q6) |

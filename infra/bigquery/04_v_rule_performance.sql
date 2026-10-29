@@ -10,6 +10,6 @@ SELECT
   COUNT(DISTINCT IF(f.is_processed, a.order_id, NULL)) AS orders_processed,
   COUNT(DISTINCT IF(f.is_fraud,     a.order_id, NULL)) AS orders_confirmed_fraud
 FROM `${PROJECT}.${DATASET}.rule_alerts` a
-LEFT JOIN `${PROJECT}.${FEEDBACK_TABLE}` f
+LEFT JOIN `${FEEDBACK_TABLE}` f   -- projet.dataset.table (complété par apply.sh / apply.ps1)
   ON f.order_id = a.order_id
 GROUP BY a.rule_id, a.rule_version, a.run_date;
