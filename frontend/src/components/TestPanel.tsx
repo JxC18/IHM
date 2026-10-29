@@ -86,11 +86,25 @@ export function TestPanel({ sql, target, onIssues, onGoTo, onTested, onExecuted 
 
   return (
     <div className="stack test-panel">
-      {/* Action */}
+      {/* Deux actions sous l'éditeur : valider la syntaxe (dry-run gratuit), puis tester (exécution). */}
       <div className="test-toolbar">
-        <button type="button" className="btn btn-primary" onClick={runDry} disabled={busy || !sql.trim()}>
-          {phase === 'dry-running' ? <span className="spinner" aria-hidden="true" /> : '▶'} {exec || dry ? 'Relancer le test' : 'Tester la requête'}
+        <button type="button" className="btn" onClick={runDry} disabled={busy || !sql.trim()}>
+          {phase === 'dry-running' ? <span className="spinner" aria-hidden="true" /> : <span aria-hidden="true">✓</span>} Valider la syntaxe
         </button>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={runExec}
+          disabled={!canExec}
+          title={canExec ? undefined : dry?.ok && dry.exceedsBytesLimit ? 'Volume à scanner au-delà du plafond' : "Validez d'abord la syntaxe de la requête actuelle"}
+        >
+          {phase === 'executing' ? <span className="spinner" aria-hidden="true" /> : <span aria-hidden="true">▶</span>} Tester la requête
+        </button>
+        {dry?.ok && !stale && !busy && (
+          <span className={`test-inline ${dry.exceedsBytesLimit ? 'bad' : 'good'}`}>
+            {dry.exceedsBytesLimit ? '✕' : '✓'} Syntaxe valide · {fmtBytes(dry.bytesProcessed ?? 0)} à scanner
+          </span>
+        )}
       </div>
       <p className="small muted test-hint">
         La requête s'exécute telle quelle aujourd'hui ({fmtLongDate(isoDate(new Date()))}) ; pour la veille :{' '}
@@ -98,8 +112,8 @@ export function TestPanel({ sql, target, onIssues, onGoTo, onTested, onExecuted 
       </p>
 
       {stale && (
-        <Alert kind="warn" title="La requête a changé depuis le dernier test.">
-          Relancez le test : la soumission exige un test réussi sur la version courante.
+        <Alert kind="warn" title="La requête a changé depuis la dernière validation.">
+          Validez à nouveau la syntaxe, puis testez : la soumission exige un test réussi sur la version courante.
         </Alert>
       )}
       {error && <Alert kind="error" title={error} />}
@@ -119,22 +133,10 @@ export function TestPanel({ sql, target, onIssues, onGoTo, onTested, onExecuted 
           </div>
         )}
 
-        {/* Requête valide : confirmation de l'exécution, coût annoncé */}
-        {dry?.ok && !exec && phase !== 'executing' && (
-          dry.exceedsBytesLimit ? (
-            <Alert kind="error" title={`Exécution refusée : ${fmtBytes(dry.bytesProcessed ?? 0)} à scanner, au-delà du plafond de ${g ? fmtBytes(g.maxBytesBilled) : '…'}.`}>
-              Restreignez la période ou les tables scannées.
-            </Alert>
-          ) : (
-            <div className="test-status ok">
-              <span>
-                <strong>✓ Requête valide.</strong> L'exécution scannera environ <strong>{fmtBytes(dry.bytesProcessed ?? 0)}</strong>.
-              </span>
-              <button type="button" className="btn btn-primary btn-sm" onClick={runExec} disabled={!canExec}>
-                Exécuter et compter les commandes
-              </button>
-            </div>
-          )
+        {dry?.ok && dry.exceedsBytesLimit && !stale && (
+          <Alert kind="error" title={`Test impossible : ${fmtBytes(dry.bytesProcessed ?? 0)} à scanner, au-delà du plafond de ${g ? fmtBytes(g.maxBytesBilled) : '…'}.`}>
+            Restreignez la période ou les tables scannées.
+          </Alert>
         )}
         {phase === 'executing' && <Spinner label="Exécution et recoupement avec les autres règles…" />}
 

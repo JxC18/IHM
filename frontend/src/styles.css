@@ -1606,6 +1606,16 @@ details summary {
   align-items: center;
   gap: 10px 14px;
 }
+.test-inline {
+  font-size: 13px;
+  font-weight: 500;
+}
+.test-inline.good {
+  color: var(--good);
+}
+.test-inline.bad {
+  color: var(--bad);
+}
 .test-hint {
   margin: -6px 0 0;
 }
@@ -1619,9 +1629,6 @@ details summary {
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--surface-2);
-}
-.test-status.ok {
-  border-left: 3px solid var(--good);
 }
 .test-status.bad {
   display: block;
