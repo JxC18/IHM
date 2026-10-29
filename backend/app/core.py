@@ -43,6 +43,8 @@ class Settings(BaseSettings):
 
     # Indicateurs F6
     latency_days: int = 7
+    # Test : commandes déjà remontées par une autre règle, cherchées dans rule_alerts sur cette période.
+    overlap_days: int = 90
 
     # Notification équipe data (PRD Q6) : vide = journalisation seule.
     notify_webhook_url: str = ""

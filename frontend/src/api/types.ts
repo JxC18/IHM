@@ -89,6 +89,8 @@ export interface Draft extends RuleInput {
 export interface TestTarget {
   ruleId?: string;
   draftId?: string;
+  /** Test non rattaché d'une nouvelle version : ses propres remontées ne comptent pas comme « déjà remontées ». */
+  excludeRuleId?: string;
 }
 
 // ---------- F3 : test de la requête ----------
@@ -138,6 +140,14 @@ export interface ExecutionResult {
   totalRows: number;
   durationMs: number;
   bytesProcessed: number;
+  /** Commandes distinctes renvoyées par la requête. */
+  ordersFlagged: number;
+  /** Dont déjà remontées par une autre règle (table rule_alerts) ; absent si rule_alerts est indisponible. */
+  ordersAlreadyFlagged?: number;
+  /** Règles qui remontent déjà ces commandes, les plus nombreuses d'abord (5 au plus). */
+  overlapRules: { ruleId: string; ruleName: string; orders: number }[];
+  /** Période de recherche dans rule_alerts, en jours. */
+  overlapDays: number;
   testId: string;
 }
 

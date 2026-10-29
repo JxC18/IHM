@@ -444,7 +444,7 @@ export function RuleEditorPage() {
           <div className="card-pad">
             <TestPanel
               sql={form.sqlQuery}
-              target={draft ? { draftId: draft.id } : undefined}
+              target={draft ? { draftId: draft.id } : rule ? { excludeRuleId: rule.ruleId } : undefined}
               onIssues={setDryIssues}
               onGoTo={(l, c) => editor.current?.goTo(l, c)}
               onExecuted={setExecHash}

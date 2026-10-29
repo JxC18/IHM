@@ -327,6 +327,11 @@ export function simulateExecution(sql: string, g: Guardrails, dry: DryRunResult,
     totalRows,
     durationMs: Math.round(1500 + r() * 9000),
     bytesProcessed: dry.bytesProcessed ?? 0,
+    // Recoupement avec les autres règles : calculé par mockApi, qui connaît les règles en production.
+    ordersFlagged: totalRows,
+    ordersAlreadyFlagged: 0,
+    overlapRules: [],
+    overlapDays: 90,
     testId,
   };
 }

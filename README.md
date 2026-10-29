@@ -310,6 +310,10 @@ navigateur ──► front (Nginx, Cloud Run) ──/api──► API FastAPI (C
   refusé. `rules_registry` n'a donc pas de colonne `parameters`. Conséquence à connaître pour l'équipe data :
   rejouer une règle sur un jour passé (rattrapage) demande de réécrire la date dans la requête.
 - **Identité** : `owner_matricule` remplace `owner_email` dans `rules_registry`.
+- **Résultat d'un test** : nombre de commandes remontées (distinctes), et combien sont déjà remontées par une
+  autre règle (table `rule_alerts`, 90 derniers jours, réglable par `RM_OVERLAP_DAYS`), avec les règles concernées.
+  Le recoupement relit le résultat du test (table temporaire du job BigQuery) : la requête n'est pas rejouée.
+  Les versions de la même règle ne sont pas comptées. Si `rule_alerts` est illisible, seul le total s'affiche.
 - **Période d'un test** : la requête s'exécute le jour même. Le modèle de départ vise la veille, dernière journée
   complète : `order_date = DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)`. La période couverte dépend de la
   requête (ex. `BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 8 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)`).

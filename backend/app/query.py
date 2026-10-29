@@ -11,7 +11,7 @@ from app.auth import get_current_user
 from app.bigquery import BigQueryGateway, BytesLimitExceeded, QueryError, get_bigquery
 from app.core import ApiError, Settings, get_settings, now
 from app.database import Draft, Rule, RuleVersion, TestRun, User, get_db, record_audit
-from app.schemas import BudgetUsage, DryRunResult, ExecutionResult, Guardrails, QueryIn, SqlIssue
+from app.schemas import BudgetUsage, DryRunResult, ExecutionResult, Guardrails, OverlapRule, QueryIn, SqlIssue
 from app.sql_checks import check_hardcoded_dates, check_params, query_hash
 
 router = APIRouter(tags=["test"])
@@ -187,7 +187,8 @@ def execute(
             429, "Budget mensuel de scan atteint : exécution bloquée jusqu'au mois prochain.", "BUDGET"
         )
     try:
-        res = bq.execute(body.sql)
+        own = target[0].rule_id if target[0] else target[1].rule_id if target[1] else body.exclude_rule_id
+        res = bq.execute(body.sql, exclude_rule_id=own, overlap_days=settings.overlap_days)
     except BytesLimitExceeded as e:
         _record(db, user, body, target, phase="EXECUTION", success=False, error=str(e))
         raise ApiError(422, "Exécution interrompue : plafond de volume scanné atteint.", "BYTES_LIMIT") from e
@@ -213,5 +214,23 @@ def execute(
         total_rows=res.total_rows,
         duration_ms=res.duration_ms,
         bytes_processed=res.bytes_processed,
+        orders_flagged=res.overlap.orders,
+        orders_already_flagged=res.overlap.already_flagged,
+        overlap_rules=_overlap_rules(db, res.overlap.by_rule),
+        overlap_days=settings.overlap_days,
         test_id=run.id,
     )
+
+
+def _overlap_rules(db: Session, by_rule: list[tuple[str, int]]) -> list[OverlapRule]:
+    """Nomme les règles en commun (dernière version ; identifiant si inconnue de la plateforme)."""
+    rules = {r.rule_id: r for r in db.scalars(select(Rule).where(Rule.rule_id.in_([i for i, _ in by_rule])))}
+    out = []
+    for rule_id, n in by_rule:
+        r = rules.get(rule_id)
+        out.append(
+            OverlapRule(
+                rule_id=rule_id, rule_name=r.versions[-1].name if r and r.versions else rule_id, orders=n
+            )
+        )
+    return out

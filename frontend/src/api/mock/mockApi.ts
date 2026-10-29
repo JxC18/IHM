@@ -515,6 +515,17 @@ export function createMockApi(): Api {
       }
       await delay(900, 1800);
       const res = simulateExecution(sql, GUARDRAILS, dry, 'exec');
+      // Commandes déjà remontées par les autres règles en production (simulé, stable pour une même requête).
+      const own = target?.draftId ? findDraft(target.draftId, u).ruleId : (target?.ruleId ?? target?.excludeRuleId);
+      const h = queryHash(sql);
+      res.overlapRules = db.rules
+        .filter((r) => r.ruleId !== own && running(r))
+        .map((r) => ({ ruleId: r.ruleId, ruleName: current(r).name, orders: Math.round(res.ordersFlagged * rnd(h + r.ruleId) * 0.14) }))
+        .filter((o) => o.orders > 0)
+        .sort((a, b) => b.orders - a.orders)
+        .slice(0, 5);
+      // Une même commande peut être remontée par plusieurs règles : le total est inférieur à la somme.
+      res.ordersAlreadyFlagged = Math.min(res.ordersFlagged, Math.round(res.overlapRules.reduce((s, o) => s + o.orders, 0) * 0.85));
       db.usage[u.matricule] = { ...db.usage[u.matricule], [month()]: used(u.matricule) + res.bytesProcessed };
       // Seules les métadonnées sont conservées, jamais les lignes (PRD §10).
       const rec = recordTest(u, target, sql, {

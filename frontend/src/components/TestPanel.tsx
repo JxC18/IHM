@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { api } from '../api/client';
 import type { DryRunResult, ExecutionResult, SqlIssue, TestTarget } from '../api/types';
 import { useAsync } from '../lib/useAsync';
-import { addDays, fmtBytes, fmtDuration, fmtEur, fmtInt, fmtLongDate, isoDate } from '../lib/format';
+import { addDays, fmtBytes, fmtDuration, fmtEur, fmtInt, fmtLongDate, fmtPct, isoDate } from '../lib/format';
 import { queryHash } from '../lib/sql';
 import { Alert, Spinner } from './ui';
 
@@ -181,16 +181,7 @@ export function TestPanel({ sql, target, onIssues, onGoTo, onTested, onExecuted 
               ) : phase === 'executing' ? (
                 <Spinner label="Exécution en cours…" />
               ) : exec ? (
-                <dl className="kv">
-                  <dt>Lignes (requête complète)</dt>
-                  <dd>
-                    <strong>{fmtInt(exec.totalRows)}</strong>
-                  </dd>
-                  <dt>Durée réelle</dt>
-                  <dd>{fmtDuration(exec.durationMs)}</dd>
-                  <dt>Volume scanné réel</dt>
-                  <dd>{fmtBytes(exec.bytesProcessed)}</dd>
-                </dl>
+                <ExecSummary exec={exec} />
               ) : (
                 <div className="stack" style={{ gap: 8 }}>
                   <p className="small" style={{ margin: 0 }}>
@@ -245,6 +236,56 @@ export function TestPanel({ sql, target, onIssues, onGoTo, onTested, onExecuted 
             </div>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+/** Commandes remontées, et recoupement avec les règles existantes (table rule_alerts). */
+function ExecSummary({ exec }: { exec: ExecutionResult }) {
+  const already = exec.ordersAlreadyFlagged;
+  const known = already != null;
+  return (
+    <div className="stack" style={{ gap: 8 }}>
+      <dl className="kv">
+        <dt>Commandes remontées</dt>
+        <dd>
+          <strong>{fmtInt(exec.ordersFlagged)}</strong>
+        </dd>
+        <dt>Déjà remontées par une autre règle</dt>
+        <dd>
+          {!known ? (
+            <span className="muted" title="La table rule_alerts n'a pas pu être lue">
+              indisponible
+            </span>
+          ) : (
+            <>
+              <strong>{fmtInt(already)}</strong>
+              {exec.ordersFlagged > 0 && <span className="muted"> · {fmtPct(already / exec.ordersFlagged)}</span>}
+              <span className="small muted"> (sur {exec.overlapDays} jours)</span>
+            </>
+          )}
+        </dd>
+        {known && (
+          <>
+            <dt>Nouvelles commandes</dt>
+            <dd>{fmtInt(exec.ordersFlagged - already)}</dd>
+          </>
+        )}
+        <dt>Durée · volume scanné</dt>
+        <dd className="small">
+          {fmtDuration(exec.durationMs)} · {fmtBytes(exec.bytesProcessed)}
+        </dd>
+      </dl>
+      {exec.overlapRules.length > 0 && (
+        <ul className="overlap-list small">
+          {exec.overlapRules.map((o) => (
+            <li key={o.ruleId}>
+              <span className="overlap-name">{o.ruleName}</span>
+              <span className="muted">{fmtInt(o.orders)} en commun</span>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

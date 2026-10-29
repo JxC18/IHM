@@ -286,3 +286,18 @@ def test_reprise_d_une_v2_remet_la_v1_dans_rules_registry(client, bq):
     # La v2 n'a jamais tourné : son auteur la reprend, la ligne revient à la v1 qui tourne toujours.
     client.post("/drafts", json={**RULE, "description": "v2 corrigée", "ruleId": rid})
     assert bq.registry == {rid: (1, "IN_PRODUCTION")}
+
+
+def test_execution_compte_les_commandes_deja_remontees_par_une_autre_regle(client, bq):
+    login(client)
+    autre = _submit(client, {**RULE, "name": "Autre règle"})
+    mienne = _submit(client)
+    bq.overlap = [(autre, 2), (mienne, 3), ("hors-plateforme", 1)]
+    # Nouvelle version de « mienne » : ses propres remontées ne comptent pas comme déjà vues ailleurs.
+    did = client.post("/drafts", json={**RULE, "description": "v2", "ruleId": mienne}).json()["id"]
+    ex = client.post("/query/execute", json={"sql": SQL, "draftId": did}).json()
+    assert (ex["ordersFlagged"], ex["ordersAlreadyFlagged"], ex["overlapDays"]) == (5, 3, 90)
+    assert [(r["ruleName"], r["orders"]) for r in ex["overlapRules"]] == [
+        ("Autre règle", 2),
+        ("hors-plateforme", 1),
+    ]
