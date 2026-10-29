@@ -190,7 +190,7 @@ def update_draft(
 @router.delete("/{draft_id}", status_code=204)
 def delete_draft(draft_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     d = _load(db, draft_id, user)
-    # Les tests restent (budget de scan), simplement détachés.
+    # Les tests restent (historique), simplement détachés.
     db.execute(update(TestRun).where(TestRun.draft_id == d.id).values(draft_id=None))
     db.delete(d)
     db.commit()

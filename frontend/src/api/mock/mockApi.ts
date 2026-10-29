@@ -33,8 +33,6 @@ const GUARDRAILS: Guardrails = {
   maxBytesBilled: 50e9,
   jobTimeoutMs: 60_000,
   maxResults: 100,
-  monthlyBudgetBytes: 1e12, // à définir (PRD Q5) — valeur de démo
-  costPerTbEur: 5,
 };
 
 interface Session {
@@ -294,10 +292,6 @@ export function createMockApi(): Api {
     return out;
   }
 
-  // ---------- budget ----------
-  const month = () => new Date().toISOString().slice(0, 7);
-  const used = (m: string) => db.usage[m]?.[month()] ?? 0;
-
   function recordTest(u: User, target: TestTarget | undefined, sql: string, t: Partial<TestRecord> & Pick<TestRecord, 'phase' | 'success'>): TestRecord {
     const draft = target?.draftId ? findDraft(target.draftId, u) : undefined;
     const cur = !draft && target?.ruleId ? current(findRule(target.ruleId)) : undefined;
@@ -463,7 +457,7 @@ export function createMockApi(): Api {
     async deleteDraft(id) {
       await delay();
       const d = findDraft(id, currentUser());
-      // Les tests restent (budget de scan), simplement détachés.
+      // Les tests restent (historique), simplement détachés.
       for (const t of db.tests) if (t.draftId === d.id) delete t.draftId;
       db.drafts = db.drafts.filter((x) => x !== d);
       save();
@@ -477,11 +471,6 @@ export function createMockApi(): Api {
       await delay(30, 60);
       return { ...GUARDRAILS };
     },
-    async getBudget() {
-      await delay(30, 60);
-      const u = currentUser();
-      return { month: month(), bytesUsed: used(u.matricule), budgetBytes: GUARDRAILS.monthlyBudgetBytes };
-    },
     async dryRun(sql, target) {
       await delay(400, 900);
       const u = currentUser();
@@ -493,7 +482,6 @@ export function createMockApi(): Api {
         phase: 'DRY_RUN',
         success: res.ok,
         bytesProcessed: res.bytesProcessed,
-        estimatedCostEur: res.estimatedCostEur,
         error: firstError?.message,
       });
       return { ...res, testId: rec.id };
@@ -510,9 +498,6 @@ export function createMockApi(): Api {
           'BYTES_LIMIT',
         );
       }
-      if (used(u.matricule) + dry.bytesProcessed! > GUARDRAILS.monthlyBudgetBytes) {
-        throw new ApiError(429, 'Budget mensuel de scan atteint : exécution bloquée jusqu’au mois prochain.', 'BUDGET');
-      }
       await delay(900, 1800);
       const res = simulateExecution(sql, GUARDRAILS, dry, 'exec');
       // Commandes déjà remontées par les autres règles en production (simulé, stable pour une même requête).
@@ -526,7 +511,6 @@ export function createMockApi(): Api {
         .slice(0, 5);
       // Une même commande peut être remontée par plusieurs règles : le total est inférieur à la somme.
       res.ordersAlreadyFlagged = Math.min(res.ordersFlagged, Math.round(res.overlapRules.reduce((s, o) => s + o.orders, 0) * 0.85));
-      db.usage[u.matricule] = { ...db.usage[u.matricule], [month()]: used(u.matricule) + res.bytesProcessed };
       // Seules les métadonnées sont conservées, jamais les lignes (PRD §10).
       const rec = recordTest(u, target, sql, {
         phase: 'EXECUTION',

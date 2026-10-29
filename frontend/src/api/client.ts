@@ -1,7 +1,6 @@
 import type {
   AuditEvent,
   Draft,
-  BudgetUsage,
   ConsolidatedRow,
   DryRunResult,
   ExecutionResult,
@@ -48,7 +47,6 @@ export interface Api {
 
   // F3
   getGuardrails(): Promise<Guardrails>;
-  getBudget(): Promise<BudgetUsage>;
   dryRun(sql: string, target?: TestTarget): Promise<DryRunResult>;
   execute(sql: string, target?: TestTarget): Promise<ExecutionResult>;
 
@@ -117,7 +115,6 @@ export function createHttpApi(): Api {
     updateDraft: (id, input) => http('PUT', `/drafts/${id}`, input),
     deleteDraft: (id) => http('DELETE', `/drafts/${id}`),
     getGuardrails: () => http('GET', '/config/guardrails'),
-    getBudget: () => http('GET', '/me/budget'),
     dryRun: (sql, target) => http('POST', '/query/dry-run', { sql, ...target }),
     execute: (sql, target) => http('POST', '/query/execute', { sql, ...target }),
     submitDraft: (id) => http('POST', `/drafts/${id}/submit`),

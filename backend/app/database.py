@@ -12,7 +12,6 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     DateTime,
-    Float,
     ForeignKey,
     Integer,
     String,
@@ -160,7 +159,6 @@ class TestRun(Base):
     phase: Mapped[str] = mapped_column(String(10))  # DRY_RUN | EXECUTION
     success: Mapped[bool] = mapped_column(Boolean)
     bytes_processed: Mapped[int | None] = mapped_column(BigInteger)
-    estimated_cost_eur: Mapped[float | None] = mapped_column(Float)
     duration_ms: Mapped[int | None] = mapped_column(Integer)
     total_rows: Mapped[int | None] = mapped_column(BigInteger)
     error: Mapped[str | None] = mapped_column(Text)

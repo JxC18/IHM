@@ -33,8 +33,6 @@ class Settings(BaseSettings):
     max_bytes_billed: int = 50 * 10**9
     job_timeout_ms: int = 60_000
     max_results: int = 100
-    monthly_budget_bytes: int = 10**12  # à définir (PRD Q5)
-    cost_per_tb_eur: float = 5.0
 
     # Session F8
     session_ttl_hours: int = 8

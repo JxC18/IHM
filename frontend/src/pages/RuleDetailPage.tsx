@@ -10,7 +10,7 @@ import { DiffView } from '../components/DiffView';
 import { PerformanceDashboard } from '../components/PerformanceDashboard';
 import { Alert, CriticalityBadge, idleFor, Lifecycle, Spinner, StatusBadge } from '../components/ui';
 import { AuditTable } from './AuditPage';
-import { SCHEDULE_LABEL, fmtBytes, fmtDateTime, fmtDuration, fmtEur, fmtInt } from '../lib/format';
+import { SCHEDULE_LABEL, fmtBytes, fmtDateTime, fmtDuration, fmtInt } from '../lib/format';
 import { queryHash } from '../lib/sql';
 import { useAsync } from '../lib/useAsync';
 import { usePref } from '../prefs/prefs';
@@ -176,24 +176,17 @@ function DefinitionTab({ r, onTested }: { r: RuleDetail; onTested: () => void })
           )}
         </dl>
       </div>
-      <section className="card">
+      <section className="card" id="rule-test" aria-labelledby="rule-test-title">
         <div className="card-head">
-          <h2>Requête SQL</h2>
+          <div>
+            <h2 id="rule-test-title">Requête SQL</h2>
+            <p>v{r.version} telle que soumise ; le test l'exécute sans rien modifier.</p>
+          </div>
         </div>
         <div className="card-pad stack">
           <SqlEditor ref={editor} value={r.sqlQuery} readOnly issues={issues} ariaLabel="Requête SQL (lecture seule)" />
         </div>
-      </section>
-      <section className="card" id="rule-test" aria-labelledby="rule-test-title">
-        <div className="card-head">
-          <div>
-            <h2 id="rule-test-title">Tester la requête</h2>
-            <p>
-              Test de la v{r.version} telle que soumise, sans rien modifier.
-            </p>
-          </div>
-        </div>
-        <div className="card-pad">
+        <div className="card-pad test-zone">
           <TestPanel
             sql={r.sqlQuery}
             target={{ ruleId: r.ruleId }}
@@ -245,7 +238,6 @@ function TestsTab({ r, hash }: { r: RuleDetail; hash: string }) {
                 </td>
                 <td className="num small">
                   {t.bytesProcessed != null ? fmtBytes(t.bytesProcessed) : '—'}
-                  {t.estimatedCostEur != null && t.phase === 'DRY_RUN' && <div className="muted">~{fmtEur(t.estimatedCostEur)}</div>}
                 </td>
                 <td className="num small">{t.totalRows != null ? fmtInt(t.totalRows) : '—'}</td>
                 <td className="num small">{t.durationMs != null ? fmtDuration(t.durationMs) : '—'}</td>

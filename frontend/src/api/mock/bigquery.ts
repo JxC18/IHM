@@ -273,7 +273,6 @@ export function simulateDryRun(sql: string, g: Guardrails, testId: string): DryR
     statementType: a.statementType,
     outputSchema: a.outputSchema,
     bytesProcessed,
-    estimatedCostEur: (bytesProcessed / 1e12) * g.costPerTbEur,
     issues: a.issues,
     exceedsBytesLimit: bytesProcessed > g.maxBytesBilled,
     testId,

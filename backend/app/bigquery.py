@@ -18,6 +18,7 @@ from typing import Any, Protocol
 from app.core import Settings, get_settings
 from app.database import Rule, RuleVersion
 from app.schemas import Column, DailyPerformance, RuleRun, VersionPerformance
+from app.sql_checks import mask_sql
 
 log = logging.getLogger(__name__)
 
@@ -334,6 +335,51 @@ def _jsonable(v: Any) -> Any:
 # ---------------------------------------------------------------------------
 
 
+# Colonnes renvoyées par « SELECT * » dans le BigQuery simulé.
+_STAR_COLUMNS = ["order_id", "customer_id", "order_date", "amount_eur"]
+
+
+def select_columns(sql: str) -> list[str]:
+    """Noms des colonnes de la dernière projection SELECT de premier niveau (BigQuery simulé) :
+    alias (AS x), sinon dernier identifiant (o.amount_eur → amount_eur), sinon f0_, f1_…"""
+    masked = mask_sql(sql)
+    depth, select_at, from_at = 0, None, None
+    for m in re.finditer(r"[()]|\b(SELECT|FROM)\b", masked, re.I):
+        tok = m.group(0)
+        if tok == "(":
+            depth += 1
+        elif tok == ")":
+            depth -= 1
+        elif depth == 0 and tok.upper() == "SELECT":
+            select_at, from_at = m.end(), None
+        elif depth == 0 and tok.upper() == "FROM" and select_at is not None and from_at is None:
+            from_at = m.start()
+    if select_at is None:
+        return ["f0_"]
+    items, depth, start = [], 0, select_at
+    body = masked[select_at : from_at if from_at is not None else len(masked)]
+    for i, ch in enumerate(body):
+        depth += ch == "("
+        depth -= ch == ")"
+        if ch == "," and depth == 0:
+            items.append(body[start - select_at : i])
+            start = select_at + i + 1
+    items.append(body[start - select_at :])
+    cols: list[str] = []
+    for k, item in enumerate(i.strip() for i in items):
+        item = re.sub(r"^(DISTINCT|ALL)\s+", "", item, flags=re.I)
+        alias = re.search(r"\bAS\s+(\w+)\s*$", item, re.I)
+        if alias:
+            cols.append(alias.group(1))
+        elif item.endswith("*"):
+            cols.extend(c for c in _STAR_COLUMNS if c not in cols)
+        elif ident := re.fullmatch(r"(?:\w+\.)*(\w+)", item):
+            cols.append(ident.group(1))
+        else:
+            cols.append(f"f{k}_")
+    return cols
+
+
 @dataclass
 class FakeBigQueryGateway:
     """Simule un dry-run réussi sur toute requête commençant par SELECT/WITH.
@@ -360,17 +406,13 @@ class FakeBigQueryGateway:
         m = re.match(r"\s*(\w+)", sql)
         first = m.group(1).upper() if m else "UNKNOWN"
         stype = "SELECT" if first in ("SELECT", "WITH") else first
-        cols = (
-            [Column(name="order_id", type="STRING")]
-            if "order_id" in sql
-            else [Column(name="f0_", type="STRING")]
-        )
+        cols = [Column(name=c, type="STRING") for c in select_columns(sql)]
         return DryRunMeta(stype, self.bytes_processed, cols)
 
     def execute(self, sql, exclude_rule_id=None, overlap_days=90):
         meta = self.dry_run(sql)
         cols = [c.name for c in meta.schema]
-        rows = [{c: f"{c}-{i}" for c in cols} for i in range(5)]
+        rows = [{c: f"ORD-{1000 + i}" if c == "order_id" else f"{c}-{i}" for c in cols} for i in range(5)]
         # Commandes « déjà remontées » simulées : (rule_id, nombre) prérempli par les tests.
         hits = [(r, n) for r, n in self.overlap if r != exclude_rule_id]
         overlap = Overlap(5, min(5, sum(n for _, n in hits)), hits)

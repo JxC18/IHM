@@ -99,14 +99,6 @@ export interface Guardrails {
   maxBytesBilled: number;
   jobTimeoutMs: number;
   maxResults: number;
-  monthlyBudgetBytes: number;
-  costPerTbEur: number;
-}
-
-export interface BudgetUsage {
-  month: string;
-  bytesUsed: number;
-  budgetBytes: number;
 }
 
 export interface SqlIssue {
@@ -124,7 +116,6 @@ export interface DryRunResult {
   statementType?: string;
   outputSchema?: { name: string; type: string }[];
   bytesProcessed?: number;
-  estimatedCostEur?: number;
   issues: SqlIssue[];
   /** Dépassement du plafond : l'exécution sera refusée. */
   exceedsBytesLimit: boolean;
@@ -164,7 +155,6 @@ export interface TestRecord {
   phase: 'DRY_RUN' | 'EXECUTION';
   success: boolean;
   bytesProcessed?: number;
-  estimatedCostEur?: number;
   durationMs?: number;
   totalRows?: number;
   error?: string;

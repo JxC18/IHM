@@ -33,11 +33,9 @@ export interface MockDb {
   drafts: MockDraft[];
   tests: TestRecord[];
   audit: AuditEvent[];
-  /** Octets scannés par matricule et par mois (budget F3). */
-  usage: Record<string, Record<string, number>>;
 }
 
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 const daysAgo = (n: number, h = 10) => {
   const d = new Date();
@@ -284,7 +282,6 @@ function passedTest(r: RuleVersion, at: number, by: string, i: number): TestReco
     phase: 'EXECUTION',
     success: true,
     bytesProcessed: 8.2e9 + i * 1.1e9,
-    estimatedCostEur: 0.05,
     durationMs: 6400 + i * 500,
     totalRows: 280 + i * 37,
   };
@@ -401,5 +398,5 @@ export function buildSeed(): MockDb {
   }
   audit.sort((a, b) => b.at.localeCompare(a.at));
 
-  return { schema: SCHEMA_VERSION, users: USERS.map((u) => ({ ...u })), rules, drafts, tests, audit, usage: {} };
+  return { schema: SCHEMA_VERSION, users: USERS.map((u) => ({ ...u })), rules, drafts, tests, audit };
 }

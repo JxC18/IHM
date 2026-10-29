@@ -18,7 +18,7 @@ sans passer par le mail, et mesure leur efficacité grâce au retour du prestata
 │   ├── app/schemas.py   formats JSON échangés avec le front
 │   ├── app/auth.py      identification par matricule ; point UNIQUE de résolution de l'identité
 │   ├── app/rules.py     règles : liste, création, versions, soumission (F1, F4, F5)
-│   ├── app/query.py     test d'une requête : dry-run, exécution, garde-fous, budget (F3)
+│   ├── app/query.py     test d'une requête : dry-run, exécution, garde-fous (F3)
 │   ├── app/sql_checks.py contrôles du SQL non couverts par BigQuery (paramètres, dates en dur…)
 │   ├── app/pilotage.py  indicateurs de performance et journal d'audit, en lecture (F6, F7, F8)
 │   ├── app/bigquery.py  tout l'accès BigQuery (réel ou factice), dont la publication dans rules_registry
@@ -225,7 +225,6 @@ powershell -ExecutionPolicy Bypass -File infra\bigquery\apply.ps1
 | `RM_GCP_PROJECT`, `RM_BQ_DATASET`, `RM_BQ_LOCATION` | projet, dataset et région du contrat de données | — / `fraud_rules` / `europe-west9` |
 | `RM_BQ_FEEDBACK_TABLE` | table de retour du prestataire (`dataset.table` ou `projet.dataset.table`), pour créer la vue des indicateurs | — |
 | `RM_MAX_BYTES_BILLED`, `RM_JOB_TIMEOUT_MS`, `RM_MAX_RESULTS` | garde-fous des tests (F3) | 50 Go, 60 s, 100 |
-| `RM_MONTHLY_BUDGET_BYTES` | budget de scan mensuel par utilisateur | 1 To (Q5) |
 | `RM_NOTIFY_WEBHOOK_URL` | notification de l'équipe data à la soumission | vide = log (Q6) |
 
 ## Architecture (PRD §8)
@@ -238,7 +237,7 @@ navigateur ──► front (Nginx, Cloud Run) ──/api──► API FastAPI (C
 ```
 
 - Le front ne détient aucun credential BigQuery ; il ne parle qu'à l'API, sur la même origine (cookie de session first-party).
-- Les garde-fous de test (`maximumBytesBilled`, `jobTimeoutMs`, `maxResults`, budget) sont appliqués par l'API.
+- Les garde-fous de test (`maximumBytesBilled`, `jobTimeoutMs`, `maxResults`) sont appliqués par l'API.
 - Les lignes renvoyées par un test ne sont jamais persistées ni journalisées : seules les métadonnées le sont.
 - L'identité (matricule) est résolue en un seul point, `get_current_user` dans `backend/app/auth.py` ; le front la relit toujours via `/me`.
   Passer au SSO (PRD §5.4) revient à réécrire `get_current_user`.
@@ -320,5 +319,5 @@ navigateur ──► front (Nginx, Cloud Run) ──/api──► API FastAPI (C
 - **Règles horaires** : la fenêtre s'écrit avec `CURRENT_TIMESTAMP()` (ex. dernière heure écoulée).
 - **Déploiement** : API en ingress interne sans IAM entre front et API (le contrôle d'accès est réseau, PRD F8).
   La topologie exacte (load balancer interne, routage `/api`) reste à arbitrer.
-- **Valeurs provisoires** : typologies de fraude (Q4, `frontend/src/lib/format.ts`), budget mensuel (Q5),
+- **Valeurs provisoires** : typologies de fraude (Q4, `frontend/src/lib/format.ts`),
   colonnes de la table de feedback (Q2, `infra/bigquery/04_v_rule_performance.sql`).

@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import type { DryRunResult, ExecutionResult, SqlIssue, TestTarget } from '../api/types';
 import { useAsync } from '../lib/useAsync';
-import { fmtBytes, fmtDuration, fmtEur, fmtInt, fmtLongDate, fmtPct, isoDate } from '../lib/format';
+import { fmtBytes, fmtDuration, fmtInt, fmtLongDate, fmtPct, isoDate } from '../lib/format';
 import { queryHash } from '../lib/sql';
 import { Alert, Spinner } from './ui';
 
@@ -22,13 +22,24 @@ type Phase = 'idle' | 'dry-running' | 'dry-done' | 'executing' | 'exec-done';
 
 export function TestPanel({ sql, target, onIssues, onGoTo, onTested, onExecuted }: Props) {
   const guard = useAsync(() => api.getGuardrails(), []);
-  const budget = useAsync(() => api.getBudget(), []);
   const [phase, setPhase] = useState<Phase>('idle');
   const [dry, setDry] = useState<DryRunResult>();
   // Résultat d'exécution : uniquement en mémoire, jamais persisté (PRD §10).
   const [exec, setExec] = useState<ExecutionResult>();
   const [error, setError] = useState<string>();
   const [testedHash, setTestedHash] = useState<string>();
+
+  // Quand un résultat apparaît, la page descend jusqu'à lui (sans animation si l'utilisateur la refuse).
+  const statusRef = useRef<HTMLDivElement>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
+  const reveal = (el: HTMLElement | null, block: ScrollLogicalPosition) =>
+    el?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block });
+  useEffect(() => {
+    if (dry && !exec) reveal(statusRef.current, 'nearest');
+  }, [dry, exec]);
+  useEffect(() => {
+    if (exec) reveal(resultRef.current, 'start');
+  }, [exec]);
 
   const hash = queryHash(sql);
   const stale = testedHash !== undefined && testedHash !== hash;
@@ -59,7 +70,6 @@ export function TestPanel({ sql, target, onIssues, onGoTo, onTested, onExecuted 
       setExec(await api.execute(sql, target));
       setPhase('exec-done');
       onExecuted?.(hash);
-      budget.reload();
     } catch (e) {
       setError((e as Error).message);
       setPhase('dry-done');
@@ -69,7 +79,6 @@ export function TestPanel({ sql, target, onIssues, onGoTo, onTested, onExecuted 
   }
 
   const g = guard.data;
-  const b = budget.data;
   const errors = dry?.issues.filter((i) => i.severity === 'error') ?? [];
   const warnings = dry?.issues.filter((i) => i.severity === 'warning') ?? [];
   const busy = phase === 'dry-running' || phase === 'executing';
@@ -77,32 +86,11 @@ export function TestPanel({ sql, target, onIssues, onGoTo, onTested, onExecuted 
 
   return (
     <div className="stack test-panel">
-      {/* Action + budget */}
+      {/* Action */}
       <div className="test-toolbar">
         <button type="button" className="btn btn-primary" onClick={runDry} disabled={busy || !sql.trim()}>
           {phase === 'dry-running' ? <span className="spinner" aria-hidden="true" /> : '▶'} {exec || dry ? 'Relancer le test' : 'Tester la requête'}
         </button>
-        <span className="spacer" />
-        {b && (
-          <div className="test-budget small" title={g ? `Garde-fous : ${fmtBytes(g.maxBytesBilled)} scannés max., ${fmtDuration(g.jobTimeoutMs)} max., ${g.maxResults} lignes affichées` : undefined}>
-            <div className="row" style={{ justifyContent: 'space-between' }}>
-              <span className="muted">Budget du mois</span>
-              <span>
-                {fmtBytes(b.bytesUsed)} / {fmtBytes(b.budgetBytes)}
-              </span>
-            </div>
-            <div
-              className={`meter${b.bytesUsed >= b.budgetBytes ? ' over' : ''}`}
-              role="meter"
-              aria-label="Budget mensuel de scan consommé"
-              aria-valuemin={0}
-              aria-valuemax={b.budgetBytes}
-              aria-valuenow={b.bytesUsed}
-            >
-              <span style={{ width: `${Math.min(100, (b.bytesUsed / b.budgetBytes) * 100)}%` }} />
-            </div>
-          </div>
-        )}
       </div>
       <p className="small muted test-hint">
         La requête s'exécute telle quelle aujourd'hui ({fmtLongDate(isoDate(new Date()))}) ; pour la veille :{' '}
@@ -116,7 +104,7 @@ export function TestPanel({ sql, target, onIssues, onGoTo, onTested, onExecuted 
       )}
       {error && <Alert kind="error" title={error} />}
 
-      <div aria-live="polite" className="stack" style={{ gap: 12 }}>
+      <div aria-live="polite" className="stack" style={{ gap: 12 }} ref={statusRef}>
         {phase === 'dry-running' && <Spinner label="Validation de la requête (dry-run gratuit)…" />}
 
         {/* Requête refusée : les erreurs d'abord, cliquables vers la ligne fautive */}
@@ -140,8 +128,7 @@ export function TestPanel({ sql, target, onIssues, onGoTo, onTested, onExecuted 
           ) : (
             <div className="test-status ok">
               <span>
-                <strong>✓ Requête valide.</strong> L'exécution scannera environ <strong>{fmtBytes(dry.bytesProcessed ?? 0)}</strong> (~
-                {fmtEur(dry.estimatedCostEur ?? 0)}), décomptés de votre budget.
+                <strong>✓ Requête valide.</strong> L'exécution scannera environ <strong>{fmtBytes(dry.bytesProcessed ?? 0)}</strong>.
               </span>
               <button type="button" className="btn btn-primary btn-sm" onClick={runExec} disabled={!canExec}>
                 Exécuter et compter les commandes
@@ -151,7 +138,11 @@ export function TestPanel({ sql, target, onIssues, onGoTo, onTested, onExecuted 
         )}
         {phase === 'executing' && <Spinner label="Exécution et recoupement avec les autres règles…" />}
 
-        {exec && <ExecSummary exec={exec} />}
+        {exec && (
+          <div ref={resultRef} className="test-anchor">
+            <ExecSummary exec={exec} />
+          </div>
+        )}
 
         {dry && warnings.length > 0 && (
           <ul className="issue-list">
@@ -163,15 +154,15 @@ export function TestPanel({ sql, target, onIssues, onGoTo, onTested, onExecuted 
 
         {exec && (
           <p className="small muted test-meta">
-            {fmtDuration(exec.durationMs)} · {fmtBytes(exec.bytesProcessed)} scannés · colonnes{' '}
-            <span className="mono">{exec.columns.join(', ')}</span>
+            {fmtDuration(exec.durationMs)} · {fmtBytes(exec.bytesProcessed)} scannés
           </p>
         )}
 
         {exec && (
-          <details className="test-sample">
+          <details className="test-sample" open>
             <summary>
-              Échantillon : {fmtInt(exec.rows.length)} ligne{exec.rows.length > 1 ? 's' : ''} sur {fmtInt(exec.totalRows)}
+              Aperçu : {fmtInt(exec.rows.length)} ligne{exec.rows.length > 1 ? 's' : ''} sur {fmtInt(exec.totalRows)}, {exec.columns.length} colonne
+              {exec.columns.length > 1 ? 's' : ''}
               <span className="small muted"> · non conservé après fermeture de la page</span>
             </summary>
             {exec.rows.length === 0 ? (

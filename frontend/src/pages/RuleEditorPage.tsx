@@ -432,16 +432,8 @@ export function RuleEditorPage() {
               </ul>
             )}
           </div>
-        </section>
-
-        <section className="card" aria-labelledby="sec-test">
-          <div className="card-head">
-            <div>
-              <h2 id="sec-test">Test</h2>
-              <p>Le test porte sur la requête affichée, enregistrée ou non. Seules ses métadonnées sont conservées.</p>
-            </div>
-          </div>
-          <div className="card-pad">
+          {/* Test dans le même bloc que la requête : on modifie, on teste, on voit le résultat. */}
+          <div className="card-pad test-zone" id="sec-test">
             <TestPanel
               sql={form.sqlQuery}
               target={draft ? { draftId: draft.id } : rule ? { excludeRuleId: rule.ruleId } : undefined}

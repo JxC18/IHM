@@ -177,12 +177,6 @@ def test_plafond_de_volume(client, bq):
     assert r.status_code == 422 and r.json()["code"] == "BYTES_LIMIT"
 
 
-def test_budget_comptabilise_les_executions(client):
-    login(client)
-    client.post("/query/execute", json={"sql": SQL})
-    assert client.get("/me/budget").json()["bytesUsed"] == 6 * 10**9
-
-
 def test_filtres_et_recherche(client):
     login(client)
     _submit(client)
@@ -301,3 +295,11 @@ def test_execution_compte_les_commandes_deja_remontees_par_une_autre_regle(clien
         ("Autre règle", 2),
         ("hors-plateforme", 1),
     ]
+
+
+def test_apercu_contient_toutes_les_colonnes_de_la_requete(client):
+    login(client)
+    sql = "SELECT o.order_id, o.amount_eur, c.created_at AS compte_cree_le FROM `sales.orders` o JOIN c"
+    ex = client.post("/query/execute", json={"sql": sql}).json()
+    assert ex["columns"] == ["order_id", "amount_eur", "compte_cree_le"]
+    assert set(ex["rows"][0]) == {"order_id", "amount_eur", "compte_cree_le"}

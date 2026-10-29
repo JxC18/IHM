@@ -1,38 +1,19 @@
 """Test d'une requête (PRD F3) : dry-run puis exécution échantillonnée sous garde-fous."""
 
 import uuid
-from datetime import datetime
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.bigquery import BigQueryGateway, BytesLimitExceeded, QueryError, get_bigquery
 from app.core import ApiError, Settings, get_settings, now
 from app.database import Draft, Rule, RuleVersion, TestRun, User, get_db, record_audit
-from app.schemas import BudgetUsage, DryRunResult, ExecutionResult, Guardrails, OverlapRule, QueryIn, SqlIssue
+from app.schemas import DryRunResult, ExecutionResult, Guardrails, OverlapRule, QueryIn, SqlIssue
 from app.sql_checks import check_hardcoded_dates, check_params, query_hash
 
 router = APIRouter(tags=["test"])
-
-
-def _month_start(t: datetime) -> datetime:
-    return t.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-
-
-def _budget(db: Session, settings: Settings, user: User) -> BudgetUsage:
-    t = now()
-    used = db.scalar(
-        select(func.coalesce(func.sum(TestRun.bytes_processed), 0)).where(
-            TestRun.by_matricule == user.matricule,
-            TestRun.phase == "EXECUTION",
-            TestRun.at >= _month_start(t),
-        )
-    )
-    return BudgetUsage(
-        month=t.strftime("%Y-%m"), bytes_used=int(used or 0), budget_bytes=settings.monthly_budget_bytes
-    )
 
 
 Target = tuple[RuleVersion | None, Draft | None]
@@ -114,16 +95,7 @@ def guardrails(_: User = Depends(get_current_user), s: Settings = Depends(get_se
         max_bytes_billed=s.max_bytes_billed,
         job_timeout_ms=s.job_timeout_ms,
         max_results=s.max_results,
-        monthly_budget_bytes=s.monthly_budget_bytes,
-        cost_per_tb_eur=s.cost_per_tb_eur,
     )
-
-
-@router.get("/me/budget", response_model=BudgetUsage)
-def budget(
-    user: User = Depends(get_current_user), db: Session = Depends(get_db), s: Settings = Depends(get_settings)
-) -> BudgetUsage:
-    return _budget(db, s, user)
 
 
 @router.post("/query/dry-run", response_model=DryRunResult)
@@ -137,7 +109,6 @@ def dry_run(
     target = _target(db, user, body)
     issues, meta = _analyse(bq, body)
     ok = meta is not None and not any(i.severity == "error" for i in issues)
-    cost = (meta.bytes_processed / 1e12) * settings.cost_per_tb_eur if meta else None
     first_error = next((i.message for i in issues if i.severity == "error"), None)
     run = _record(
         db,
@@ -147,7 +118,6 @@ def dry_run(
         phase="DRY_RUN",
         success=ok,
         bytes_processed=meta.bytes_processed if meta else None,
-        estimated_cost_eur=cost,
         error=first_error,
     )
     return DryRunResult(
@@ -155,7 +125,6 @@ def dry_run(
         statement_type=meta.statement_type if meta else None,
         output_schema=meta.schema if meta else None,
         bytes_processed=meta.bytes_processed if meta else None,
-        estimated_cost_eur=cost,
         issues=issues,
         exceeds_bytes_limit=bool(meta and meta.bytes_processed > settings.max_bytes_billed),
         test_id=run.id,
@@ -180,11 +149,6 @@ def execute(
             f"Exécution refusée : volume estimé {meta.bytes_processed / 1e9:.1f} Go, "
             f"plafond {settings.max_bytes_billed / 1e9:.0f} Go (maximumBytesBilled).",
             "BYTES_LIMIT",
-        )
-    usage = _budget(db, settings, user)
-    if usage.bytes_used + meta.bytes_processed > usage.budget_bytes:
-        raise ApiError(
-            429, "Budget mensuel de scan atteint : exécution bloquée jusqu'au mois prochain.", "BUDGET"
         )
     try:
         own = target[0].rule_id if target[0] else target[1].rule_id if target[1] else body.exclude_rule_id

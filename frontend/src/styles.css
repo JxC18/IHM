@@ -736,21 +736,6 @@ table.data tr:last-child td {
   margin: 0;
   font-variant-numeric: tabular-nums;
 }
-.meter {
-  height: 6px;
-  background: var(--surface-3);
-  border-radius: 3px;
-  overflow: hidden;
-}
-.meter > span {
-  display: block;
-  height: 100%;
-  background: var(--accent);
-  border-radius: 3px;
-}
-.meter.over > span {
-  background: var(--bad);
-}
 .results {
   max-height: 360px;
   overflow: auto;
@@ -1606,6 +1591,15 @@ details summary {
 }
 
 /* ---------- Bloc de test ---------- */
+.test-zone {
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+/* Défilement automatique : laisse un peu d'air au-dessus du résultat. */
+.test-anchor {
+  scroll-margin-top: 16px;
+}
 .test-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -1614,9 +1608,6 @@ details summary {
 }
 .test-hint {
   margin: -6px 0 0;
-}
-.test-budget {
-  min-width: 200px;
 }
 .test-status {
   display: flex;

@@ -5,7 +5,7 @@ import { totals } from '../lib/metrics';
 import { simulateDryRun } from '../api/mock/bigquery';
 import type { Guardrails } from '../api/types';
 
-const G: Guardrails = { maxBytesBilled: 50e9, jobTimeoutMs: 60000, maxResults: 100, monthlyBudgetBytes: 1e12, costPerTbEur: 5 };
+const G: Guardrails = { maxBytesBilled: 50e9, jobTimeoutMs: 60000, maxResults: 100 };
 
 describe('paramètres nommés', () => {
   it('ignore les @ dans les chaînes et commentaires', () => {

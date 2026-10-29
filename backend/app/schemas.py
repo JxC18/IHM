@@ -58,7 +58,6 @@ class TestRecord(Model):
     phase: Literal["DRY_RUN", "EXECUTION"]
     success: bool
     bytes_processed: int | None = None
-    estimated_cost_eur: float | None = None
     duration_ms: int | None = None
     total_rows: int | None = None
     error: str | None = None
@@ -121,14 +120,6 @@ class Guardrails(Model):
     max_bytes_billed: int
     job_timeout_ms: int
     max_results: int
-    monthly_budget_bytes: int
-    cost_per_tb_eur: float
-
-
-class BudgetUsage(Model):
-    month: str
-    bytes_used: int
-    budget_bytes: int
 
 
 class QueryIn(Model):
@@ -159,7 +150,6 @@ class DryRunResult(Model):
     statement_type: str | None = None
     output_schema: list[Column] | None = None
     bytes_processed: int | None = None
-    estimated_cost_eur: float | None = None
     issues: list[SqlIssue]
     exceeds_bytes_limit: bool
     test_id: str

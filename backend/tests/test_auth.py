@@ -42,5 +42,5 @@ def test_session_expiree_apres_8h(client, session_factory):
 
 
 def test_routes_protegees(client):
-    for path in ("/rules", "/audit", "/users", "/me/budget", "/config/guardrails"):
+    for path in ("/rules", "/audit", "/users", "/config/guardrails"):
         assert client.get(path).status_code == 401, path
