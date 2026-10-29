@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { api } from '../api/client';
 import type { DryRunResult, ExecutionResult, SqlIssue, TestTarget } from '../api/types';
 import { useAsync } from '../lib/useAsync';
-import { addDays, fmtBytes, fmtDuration, fmtEur, fmtInt, fmtLongDate, fmtPct, isoDate } from '../lib/format';
+import { fmtBytes, fmtDuration, fmtEur, fmtInt, fmtLongDate, fmtPct, isoDate } from '../lib/format';
 import { queryHash } from '../lib/sql';
 import { Alert, Spinner } from './ui';
 
@@ -72,21 +72,21 @@ export function TestPanel({ sql, target, onIssues, onGoTo, onTested, onExecuted 
   const b = budget.data;
   const errors = dry?.issues.filter((i) => i.severity === 'error') ?? [];
   const warnings = dry?.issues.filter((i) => i.severity === 'warning') ?? [];
-  const step1 = phase === 'dry-running' ? 'active' : dry ? (dry.ok ? 'done' : 'failed') : '';
-  const step2 = phase === 'executing' ? 'active' : exec ? 'done' : '';
+  const busy = phase === 'dry-running' || phase === 'executing';
+  const canExec = !!dry?.ok && !dry.exceedsBytesLimit && !stale && !busy;
 
   return (
-    <div className="stack">
-      <div className="row">
-        <button type="button" className="btn btn-primary" onClick={runDry} disabled={phase === 'dry-running' || phase === 'executing' || !sql.trim()}>
-          {phase === 'dry-running' ? <span className="spinner" aria-hidden="true" /> : '▶'} Tester
+    <div className="stack test-panel">
+      {/* Action + budget */}
+      <div className="test-toolbar">
+        <button type="button" className="btn btn-primary" onClick={runDry} disabled={busy || !sql.trim()}>
+          {phase === 'dry-running' ? <span className="spinner" aria-hidden="true" /> : '▶'} {exec || dry ? 'Relancer le test' : 'Tester la requête'}
         </button>
-        <span className="small muted">Dry-run gratuit, puis exécution d'un échantillon après confirmation.</span>
         <span className="spacer" />
         {b && (
-          <div style={{ minWidth: 220 }} className="small">
+          <div className="test-budget small" title={g ? `Garde-fous : ${fmtBytes(g.maxBytesBilled)} scannés max., ${fmtDuration(g.jobTimeoutMs)} max., ${g.maxResults} lignes affichées` : undefined}>
             <div className="row" style={{ justifyContent: 'space-between' }}>
-              <span className="muted">Budget mensuel de scan</span>
+              <span className="muted">Budget du mois</span>
               <span>
                 {fmtBytes(b.bytesUsed)} / {fmtBytes(b.budgetBytes)}
               </span>
@@ -104,19 +104,10 @@ export function TestPanel({ sql, target, onIssues, onGoTo, onTested, onExecuted 
           </div>
         )}
       </div>
-
-      <p className="small" style={{ margin: 0 }}>
-        La requête s'exécute telle quelle, aujourd'hui : <span className="mono">CURRENT_DATE()</span> vaut le{' '}
-        <strong>{fmtLongDate(isoDate(new Date()))}</strong>. Pour la veille ({fmtLongDate(addDays(isoDate(new Date()), -1))}), utilisez{' '}
-        <span className="mono">DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)</span>, comme dans le modèle de départ.
+      <p className="small muted test-hint">
+        La requête s'exécute telle quelle aujourd'hui ({fmtLongDate(isoDate(new Date()))}) ; pour la veille :{' '}
+        <span className="mono">DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)</span>.
       </p>
-
-      {g && (
-        <p className="small muted" style={{ margin: 0 }}>
-          Garde-fous appliqués par le serveur : volume scanné max. <strong>{fmtBytes(g.maxBytesBilled)}</strong> · durée max.{' '}
-          <strong>{fmtDuration(g.jobTimeoutMs)}</strong> · <strong>{g.maxResults}</strong> lignes affichées.
-        </p>
-      )}
 
       {stale && (
         <Alert kind="warn" title="La requête a changé depuis le dernier test.">
@@ -125,169 +116,165 @@ export function TestPanel({ sql, target, onIssues, onGoTo, onTested, onExecuted 
       )}
       {error && <Alert kind="error" title={error} />}
 
-      {(dry || phase !== 'idle') && (
-        <div className="steps" aria-live="polite">
-          <div className={`step ${step1}`}>
-            <span className="step-num">1</span>
-            <div className="stack" style={{ gap: 8, flex: 1, minWidth: 0 }}>
-              <h3>Dry-run</h3>
-              {phase === 'dry-running' && <Spinner label="Validation de la requête…" />}
-              {dry && dry.ok && (
-                <dl className="kv">
-                  <dt>Instruction</dt>
-                  <dd className="mono">{dry.statementType}</dd>
-                  <dt>Volume scanné estimé</dt>
-                  <dd>
-                    <strong>{fmtBytes(dry.bytesProcessed ?? 0)}</strong>
-                    {g && <span className="muted"> / plafond {fmtBytes(g.maxBytesBilled)}</span>}
-                  </dd>
-                  <dt>Coût estimé</dt>
-                  <dd>~{fmtEur(dry.estimatedCostEur ?? 0)}</dd>
-                  <dt>Colonnes</dt>
-                  <dd className="mono small" style={{ wordBreak: 'break-word' }}>
-                    {dry.outputSchema?.map((c) => c.name).join(', ')}
-                  </dd>
-                </dl>
-              )}
-              {dry && errors.length > 0 && (
-                <ul className="issue-list">
-                  {errors.map((i, k) => (
-                    <IssueItem key={k} issue={i} onGoTo={onGoTo} />
-                  ))}
-                </ul>
-              )}
-              {dry && warnings.length > 0 && (
-                <ul className="issue-list">
-                  {warnings.map((i, k) => (
-                    <IssueItem key={k} issue={i} onGoTo={onGoTo} />
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-          <div className={`step ${step2}`}>
-            <span className="step-num">2</span>
-            <div className="stack" style={{ gap: 8, flex: 1, minWidth: 0 }}>
-              <h3>Exécution échantillonnée</h3>
-              {!dry || !dry.ok ? (
-                <p className="small muted" style={{ margin: 0 }}>
-                  Disponible une fois le dry-run réussi.
-                </p>
-              ) : dry.exceedsBytesLimit ? (
-                <Alert kind="error" title="Exécution refusée avant lancement">
-                  Volume estimé {fmtBytes(dry.bytesProcessed ?? 0)}, au-delà du plafond de {g && fmtBytes(g.maxBytesBilled)}. Restreignez la
-                  période ou les tables scannées.
-                </Alert>
-              ) : phase === 'executing' ? (
-                <Spinner label="Exécution en cours…" />
-              ) : exec ? (
-                <ExecSummary exec={exec} />
-              ) : (
-                <div className="stack" style={{ gap: 8 }}>
-                  <p className="small" style={{ margin: 0 }}>
-                    L'exécution scannera environ <strong>{fmtBytes(dry.bytesProcessed ?? 0)}</strong> (~{fmtEur(dry.estimatedCostEur ?? 0)}), décomptés de
-                    votre budget mensuel.
-                  </p>
-                  <div>
-                    <button type="button" className="btn btn-primary btn-sm" onClick={runExec} disabled={stale}>
-                      Confirmer l'exécution
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <div aria-live="polite" className="stack" style={{ gap: 12 }}>
+        {phase === 'dry-running' && <Spinner label="Validation de la requête (dry-run gratuit)…" />}
 
-      {exec && (
-        <div className="stack" style={{ gap: 8 }}>
-          <div className="row">
-            <h3>Échantillon</h3>
-            <span className="small muted">
-              {fmtInt(exec.rows.length)} ligne{exec.rows.length > 1 ? 's' : ''} affichée{exec.rows.length > 1 ? 's' : ''} sur {fmtInt(exec.totalRows)} — non
-              conservées après fermeture de la page.
-            </span>
+        {/* Requête refusée : les erreurs d'abord, cliquables vers la ligne fautive */}
+        {dry && !dry.ok && (
+          <div className="test-status bad">
+            <strong>La requête ne peut pas être exécutée</strong>
+            <ul className="issue-list">
+              {errors.map((i, k) => (
+                <IssueItem key={k} issue={i} onGoTo={onGoTo} />
+              ))}
+            </ul>
           </div>
-          {exec.rows.length === 0 ? (
-            <div className="empty card">La requête ne remonte aucune commande.</div>
+        )}
+
+        {/* Requête valide : confirmation de l'exécution, coût annoncé */}
+        {dry?.ok && !exec && phase !== 'executing' && (
+          dry.exceedsBytesLimit ? (
+            <Alert kind="error" title={`Exécution refusée : ${fmtBytes(dry.bytesProcessed ?? 0)} à scanner, au-delà du plafond de ${g ? fmtBytes(g.maxBytesBilled) : '…'}.`}>
+              Restreignez la période ou les tables scannées.
+            </Alert>
           ) : (
-            <div className="results">
-              <table className="data">
-                <thead>
-                  <tr>
-                    <th className="num" style={{ width: 1 }}>#</th>
-                    {exec.columns.map((c) => (
-                      <th key={c}>{c}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {exec.rows.map((r, i) => (
-                    <tr key={i}>
-                      <td className="num muted">{i + 1}</td>
+            <div className="test-status ok">
+              <span>
+                <strong>✓ Requête valide.</strong> L'exécution scannera environ <strong>{fmtBytes(dry.bytesProcessed ?? 0)}</strong> (~
+                {fmtEur(dry.estimatedCostEur ?? 0)}), décomptés de votre budget.
+              </span>
+              <button type="button" className="btn btn-primary btn-sm" onClick={runExec} disabled={!canExec}>
+                Exécuter et compter les commandes
+              </button>
+            </div>
+          )
+        )}
+        {phase === 'executing' && <Spinner label="Exécution et recoupement avec les autres règles…" />}
+
+        {exec && <ExecSummary exec={exec} />}
+
+        {dry && warnings.length > 0 && (
+          <ul className="issue-list">
+            {warnings.map((i, k) => (
+              <IssueItem key={k} issue={i} onGoTo={onGoTo} />
+            ))}
+          </ul>
+        )}
+
+        {exec && (
+          <p className="small muted test-meta">
+            {fmtDuration(exec.durationMs)} · {fmtBytes(exec.bytesProcessed)} scannés · colonnes{' '}
+            <span className="mono">{exec.columns.join(', ')}</span>
+          </p>
+        )}
+
+        {exec && (
+          <details className="test-sample">
+            <summary>
+              Échantillon : {fmtInt(exec.rows.length)} ligne{exec.rows.length > 1 ? 's' : ''} sur {fmtInt(exec.totalRows)}
+              <span className="small muted"> · non conservé après fermeture de la page</span>
+            </summary>
+            {exec.rows.length === 0 ? (
+              <div className="empty">La requête ne remonte aucune commande.</div>
+            ) : (
+              <div className="results">
+                <table className="data">
+                  <thead>
+                    <tr>
+                      <th className="num" style={{ width: 1 }}>#</th>
                       {exec.columns.map((c) => (
-                        <td key={c}>{String(r[c] ?? 'NULL')}</td>
+                        <th key={c}>{c}</th>
                       ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
+                  </thead>
+                  <tbody>
+                    {exec.rows.map((r, i) => (
+                      <tr key={i}>
+                        <td className="num muted">{i + 1}</td>
+                        {exec.columns.map((c) => (
+                          <td key={c}>{String(r[c] ?? 'NULL')}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </details>
+        )}
+      </div>
     </div>
   );
 }
 
-/** Commandes remontées, et recoupement avec les règles existantes (table rule_alerts). */
+/**
+ * Les chiffres qui comptent : commandes remontées, dont nouvelles et déjà remontées par une autre règle
+ * (table rule_alerts), avec la répartition par règle.
+ */
 function ExecSummary({ exec }: { exec: ExecutionResult }) {
+  const total = exec.ordersFlagged;
   const already = exec.ordersAlreadyFlagged;
   const known = already != null;
+  const fresh = known ? total - already : null;
+  const share = (n: number) => (total > 0 ? n / total : 0);
+  const maxRule = Math.max(1, ...exec.overlapRules.map((o) => o.orders));
   return (
-    <div className="stack" style={{ gap: 8 }}>
-      <dl className="kv">
-        <dt>Commandes remontées</dt>
-        <dd>
-          <strong>{fmtInt(exec.ordersFlagged)}</strong>
-        </dd>
-        <dt>Déjà remontées par une autre règle</dt>
-        <dd>
-          {!known ? (
-            <span className="muted" title="La table rule_alerts n'a pas pu être lue">
-              indisponible
-            </span>
-          ) : (
-            <>
-              <strong>{fmtInt(already)}</strong>
-              {exec.ordersFlagged > 0 && <span className="muted"> · {fmtPct(already / exec.ordersFlagged)}</span>}
-              <span className="small muted"> (sur {exec.overlapDays} jours)</span>
-            </>
-          )}
-        </dd>
-        {known && (
-          <>
-            <dt>Nouvelles commandes</dt>
-            <dd>{fmtInt(exec.ordersFlagged - already)}</dd>
-          </>
-        )}
-        <dt>Durée · volume scanné</dt>
-        <dd className="small">
-          {fmtDuration(exec.durationMs)} · {fmtBytes(exec.bytesProcessed)}
-        </dd>
-      </dl>
-      {exec.overlapRules.length > 0 && (
-        <ul className="overlap-list small">
-          {exec.overlapRules.map((o) => (
-            <li key={o.ruleId}>
-              <span className="overlap-name">{o.ruleName}</span>
-              <span className="muted">{fmtInt(o.orders)} en commun</span>
-            </li>
-          ))}
-        </ul>
+    <section className="test-result" aria-label="Résultat du test">
+      <div className="test-kpis">
+        <div className="test-kpi">
+          <span className="test-kpi-label">Commandes remontées</span>
+          <span className="test-kpi-value">{fmtInt(total)}</span>
+          <span className="test-kpi-sub">commandes distinctes</span>
+        </div>
+        <div className="test-kpi">
+          <span className="test-kpi-label">
+            <span className="legend-key key-new" aria-hidden="true" />
+            Nouvelles
+          </span>
+          <span className="test-kpi-value">{fresh === null ? '—' : fmtInt(fresh)}</span>
+          <span className="test-kpi-sub">{fresh === null ? 'recoupement indisponible' : `${fmtPct(share(fresh))} du total`}</span>
+        </div>
+        <div className="test-kpi">
+          <span className="test-kpi-label">
+            <span className="legend-key key-known" aria-hidden="true" />
+            Déjà remontées ailleurs
+          </span>
+          <span className="test-kpi-value">{known ? fmtInt(already) : '—'}</span>
+          <span className="test-kpi-sub">
+            {known ? `${fmtPct(share(already))} · par une autre règle, ${exec.overlapDays} derniers jours` : 'table rule_alerts illisible'}
+          </span>
+        </div>
+      </div>
+
+      {known && total > 0 && (
+        <div className="split-bar" role="img" aria-label={`${fmtInt(fresh!)} nouvelles, ${fmtInt(already)} déjà remontées par une autre règle`}>
+          <span className="key-new" style={{ width: `${share(fresh!) * 100}%` }} />
+          <span className="key-known" style={{ width: `${share(already) * 100}%` }} />
+        </div>
       )}
-    </div>
+
+      {exec.overlapRules.length > 0 && (
+        <div className="stack" style={{ gap: 6 }}>
+          <h4 className="test-subtitle">Règles qui remontent déjà ces commandes</h4>
+          <ul className="overlap-list">
+            {exec.overlapRules.map((o) => (
+              <li key={o.ruleId}>
+                <span className="overlap-name" title={o.ruleName}>
+                  {o.ruleName}
+                </span>
+                <span className="overlap-bar" aria-hidden="true">
+                  <span style={{ width: `${(o.orders / maxRule) * 100}%` }} />
+                </span>
+                <span className="overlap-count">
+                  {fmtInt(o.orders)} <span className="muted">· {fmtPct(share(o.orders))}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {known && total > 0 && already === 0 && <p className="small muted" style={{ margin: 0 }}>Aucune de ces commandes n'est remontée par une autre règle.</p>}
+    </section>
   );
 }
 

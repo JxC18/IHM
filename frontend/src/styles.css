@@ -722,50 +722,6 @@ table.data tr:last-child td {
 }
 
 /* ---------- Test ---------- */
-.steps {
-  display: flex;
-  gap: 0;
-  align-items: stretch;
-}
-.step {
-  flex: 1;
-  display: flex;
-  gap: 10px;
-  padding: 12px 16px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-}
-.step:first-child {
-  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
-}
-.step:last-child {
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  border-left: none;
-}
-.step-num {
-  flex: none;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-size: 12px;
-  font-weight: 700;
-  background: var(--surface-3);
-  color: var(--text-2);
-}
-.step.done .step-num {
-  background: var(--good);
-  color: var(--surface);
-}
-.step.failed .step-num {
-  background: var(--bad);
-  color: var(--surface);
-}
-.step.active .step-num {
-  background: var(--accent);
-  color: var(--on-accent);
-}
 .kv {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -1106,13 +1062,6 @@ details summary {
   }
   .form-grid .span-2 {
     grid-column: auto;
-  }
-  .steps {
-    flex-direction: column;
-  }
-  .step:last-child {
-    border-left: 1px solid var(--border);
-    border-top: none;
   }
   main {
     padding: 16px;
@@ -1656,23 +1605,168 @@ details summary {
   }
 }
 
-/* Test : règles qui remontent déjà les mêmes commandes */
+/* ---------- Bloc de test ---------- */
+.test-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+.test-hint {
+  margin: -6px 0 0;
+}
+.test-budget {
+  min-width: 200px;
+}
+.test-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.test-status.ok {
+  border-left: 3px solid var(--good);
+}
+.test-status.bad {
+  display: block;
+  border-left: 3px solid var(--bad);
+}
+.test-status.bad .issue-list {
+  margin-top: 8px;
+}
+.test-result {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.test-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px 24px;
+}
+.test-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.test-kpi + .test-kpi {
+  border-left: 1px solid var(--border);
+  padding-left: 24px;
+}
+.test-kpi-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-2);
+  font-weight: 500;
+}
+.test-kpi-value {
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.test-kpi-sub {
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+/* Nouvelles = couleur de la marque ; déjà remontées = neutre (déjà couvertes). */
+.key-new {
+  background: var(--series-1);
+}
+.key-known {
+  background: var(--text-3);
+  opacity: 0.45;
+}
+.legend-key.key-new,
+.legend-key.key-known {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}
+.split-bar {
+  display: flex;
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--surface-3);
+  gap: 2px;
+}
+.split-bar > span {
+  display: block;
+  height: 100%;
+}
+.test-subtitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
 .overlap-list {
   list-style: none;
   margin: 0;
   padding: 0;
-  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 6px;
 }
 .overlap-list li {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(60px, 1fr) 8.5em;
+  align-items: center;
   gap: 12px;
-  padding: 4px 0;
-  border-bottom: 1px solid var(--border);
+  font-size: 13px;
 }
 .overlap-name {
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.overlap-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.overlap-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--text-3);
+  opacity: 0.6;
+  border-radius: 3px;
+}
+.overlap-count {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+}
+.test-meta {
+  margin: 0;
+  word-break: break-word;
+}
+.test-sample > summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 4px 0;
+}
+.test-sample[open] > summary {
+  margin-bottom: 8px;
+}
+@media (max-width: 640px) {
+  .test-kpi + .test-kpi {
+    border-left: none;
+    padding-left: 0;
+  }
 }
