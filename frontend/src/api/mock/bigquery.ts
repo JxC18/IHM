@@ -329,7 +329,6 @@ export function simulateExecution(sql: string, g: Guardrails, dry: DryRunResult,
     // Recoupement avec les autres règles : calculé par mockApi, qui connaît les règles en production.
     ordersFlagged: totalRows,
     ordersAlreadyFlagged: 0,
-    overlapRules: [],
     overlapDays: 90,
     testId,
   };

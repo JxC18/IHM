@@ -155,12 +155,6 @@ class DryRunResult(Model):
     test_id: str
 
 
-class OverlapRule(Model):
-    rule_id: str
-    rule_name: str
-    orders: int  # commandes en commun avec la requête testée
-
-
 class ExecutionResult(Model):
     ok: bool
     error: str | None = None
@@ -172,7 +166,6 @@ class ExecutionResult(Model):
     # Commandes distinctes renvoyées, et celles déjà remontées par une autre règle (rule_alerts).
     orders_flagged: int
     orders_already_flagged: int | None = None  # None : rule_alerts indisponible
-    overlap_rules: list[OverlapRule] = []
     overlap_days: int
     test_id: str
 

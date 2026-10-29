@@ -51,7 +51,6 @@ class Overlap:
 
     orders: int  # commandes distinctes renvoyées par la requête
     already_flagged: int | None  # dont déjà remontées par une autre règle ; None si rule_alerts illisible
-    by_rule: list[tuple[str, int]]  # (rule_id, commandes en commun), les plus nombreuses d'abord
 
 
 @dataclass
@@ -176,27 +175,25 @@ class RealBigQueryGateway:
         sql = f"""
         WITH ids AS ({ids}),
         hits AS (
-          SELECT a.rule_id, a.order_id
+          SELECT a.order_id
           FROM ids JOIN {self.ds}.rule_alerts a USING (order_id)
           WHERE a.run_date >= DATE_SUB(CURRENT_DATE(), INTERVAL @days DAY)
             AND (@exclude IS NULL OR a.rule_id != @exclude)
         )
         SELECT
           (SELECT COUNT(*) FROM ids) AS orders,
-          (SELECT COUNT(DISTINCT order_id) FROM hits) AS already,
-          ARRAY(SELECT AS STRUCT rule_id, COUNT(DISTINCT order_id) AS n FROM hits
-                GROUP BY rule_id ORDER BY n DESC LIMIT 5) AS by_rule
+          (SELECT COUNT(DISTINCT order_id) FROM hits) AS already
         """
         cfg = self._config(maximum_bytes_billed=self.settings.max_bytes_billed)
         cfg.query_parameters = [P("days", "INT64", days), P("exclude", "STRING", exclude_rule_id)]
         try:
             r = next(iter(self.client.query(sql, job_config=cfg).result()))
-            return Overlap(r["orders"], r["already"], [(b["rule_id"], b["n"]) for b in r["by_rule"]])
+            return Overlap(r["orders"], r["already"])
         except GoogleAPICallError:
             # rule_alerts absente ou illisible : on donne au moins le nombre de commandes.
             log.warning("comparaison avec rule_alerts impossible", exc_info=True)
             r = next(iter(self.client.query(f"SELECT COUNT(*) AS orders FROM ({ids})").result()))
-            return Overlap(r["orders"], None, [])
+            return Overlap(r["orders"], None)
 
     def _rows(self, sql: str, params: list) -> list[dict]:
         cfg = self._bq.QueryJobConfig(query_parameters=params)
@@ -415,7 +412,7 @@ class FakeBigQueryGateway:
         rows = [{c: f"ORD-{1000 + i}" if c == "order_id" else f"{c}-{i}" for c in cols} for i in range(5)]
         # Commandes « déjà remontées » simulées : (rule_id, nombre) prérempli par les tests.
         hits = [(r, n) for r, n in self.overlap if r != exclude_rule_id]
-        overlap = Overlap(5, min(5, sum(n for _, n in hits)), hits)
+        overlap = Overlap(5, min(5, sum(n for _, n in hits)))
         return ExecMeta(cols, rows, 5, 1200, meta.bytes_processed, overlap)
 
     def daily_performance(self, rule_id, start, end):

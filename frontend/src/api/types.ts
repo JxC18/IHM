@@ -135,8 +135,6 @@ export interface ExecutionResult {
   ordersFlagged: number;
   /** Dont déjà remontées par une autre règle (table rule_alerts) ; absent si rule_alerts est indisponible. */
   ordersAlreadyFlagged?: number;
-  /** Règles qui remontent déjà ces commandes, les plus nombreuses d'abord (5 au plus). */
-  overlapRules: { ruleId: string; ruleName: string; orders: number }[];
   /** Période de recherche dans rule_alerts, en jours. */
   overlapDays: number;
   testId: string;

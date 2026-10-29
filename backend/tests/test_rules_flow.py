@@ -291,10 +291,6 @@ def test_execution_compte_les_commandes_deja_remontees_par_une_autre_regle(clien
     did = client.post("/drafts", json={**RULE, "description": "v2", "ruleId": mienne}).json()["id"]
     ex = client.post("/query/execute", json={"sql": SQL, "draftId": did}).json()
     assert (ex["ordersFlagged"], ex["ordersAlreadyFlagged"], ex["overlapDays"]) == (5, 3, 90)
-    assert [(r["ruleName"], r["orders"]) for r in ex["overlapRules"]] == [
-        ("Autre règle", 2),
-        ("hors-plateforme", 1),
-    ]
 
 
 def test_apercu_contient_toutes_les_colonnes_de_la_requete(client):

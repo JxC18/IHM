@@ -244,7 +244,6 @@ function ExecSummary({ exec }: { exec: ExecutionResult }) {
   const known = already != null;
   const fresh = known ? total - already : null;
   const share = (n: number) => (total > 0 ? n / total : 0);
-  const maxRule = Math.max(1, ...exec.overlapRules.map((o) => o.orders));
   return (
     <section className="test-result" aria-label="Résultat du test">
       <div className="test-kpis">
@@ -280,26 +279,6 @@ function ExecSummary({ exec }: { exec: ExecutionResult }) {
         </div>
       )}
 
-      {exec.overlapRules.length > 0 && (
-        <div className="stack" style={{ gap: 6 }}>
-          <h4 className="test-subtitle">Règles qui remontent déjà ces commandes</h4>
-          <ul className="overlap-list">
-            {exec.overlapRules.map((o) => (
-              <li key={o.ruleId}>
-                <span className="overlap-name" title={o.ruleName}>
-                  {o.ruleName}
-                </span>
-                <span className="overlap-bar" aria-hidden="true">
-                  <span style={{ width: `${(o.orders / maxRule) * 100}%` }} />
-                </span>
-                <span className="overlap-count">
-                  {fmtInt(o.orders)} <span className="muted">· {fmtPct(share(o.orders))}</span>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
       {known && total > 0 && already === 0 && <p className="small muted" style={{ margin: 0 }}>Aucune de ces commandes n'est remontée par une autre règle.</p>}
     </section>
   );

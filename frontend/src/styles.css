@@ -1716,48 +1716,6 @@ details summary {
   display: block;
   height: 100%;
 }
-.test-subtitle {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 600;
-}
-.overlap-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 6px;
-}
-.overlap-list li {
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(60px, 1fr) 8.5em;
-  align-items: center;
-  gap: 12px;
-  font-size: 13px;
-}
-.overlap-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.overlap-bar {
-  height: 6px;
-  border-radius: 3px;
-  background: var(--surface-3);
-  overflow: hidden;
-}
-.overlap-bar > span {
-  display: block;
-  height: 100%;
-  background: var(--text-3);
-  opacity: 0.6;
-  border-radius: 3px;
-}
-.overlap-count {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  text-align: right;
-}
 .test-meta {
   margin: 0;
   word-break: break-word;
