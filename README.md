@@ -287,11 +287,11 @@ navigateur ──► front (Nginx, Cloud Run) ──/api──► API FastAPI (C
   ```sql
   INSERT INTO `projet.fraud_rules.rule_alerts`
     (rule_id, rule_version, run_id, run_date, order_id, detected_at, details)
-  SELECT @rule_id, @rule_version, @run_id, @run_date,
+  SELECT @rule_id, @rule_version, @run_id, CURRENT_DATE(),
          CAST(t.order_id AS STRING), CURRENT_TIMESTAMP(),
          TO_JSON(t)                 -- toute la ligne de résultat (order_id compris)
   FROM (
-    /* sql_query lue dans rules_registry ; @run_date fourni par le DAG */
+    /* sql_query lue dans rules_registry, exécutée telle quelle */
   ) AS t
   ```
   Une table `rule_alerts` créée avant l'ajout de `details` est mise à jour par
@@ -301,21 +301,19 @@ navigateur ──► front (Nginx, Cloud Run) ──/api──► API FastAPI (C
   une nouvelle version (risque R3 : le motif n'est pas tracé). L'état des runs est recopié par
   `POST /internal/sync-runs`, à appeler périodiquement (Cloud Scheduler, toutes les heures par exemple).
 - **Contraintes SQL** : seul le DML/DDL bloque l'enregistrement d'un brouillon. Pour tester, il faut une requête
-  valide pour BigQuery exposant `order_id` ; soumettre exige un test réussi. `@run_date` est **facultatif** :
-  la façon dont la requête sera planifiée relève de l'équipe data, pas de l'auteur de la règle. Les dates en
+  valide pour BigQuery exposant `order_id` ; soumettre exige un test réussi. Les dates en
   dur ne sont qu'une alerte : légitimes comme seuil fixe (`created_at >= '2024-01-01'`), à éviter comme jour
   traité (`order_date = '2026-10-27'` relirait ce jour à chaque exécution).
-- **Paramètres (écart au PRD F2)** : pas de paramètres déclarés. Les seuils s'écrivent en dur dans le SQL
-  (`amount_eur >= 500`) et leur évolution se lit dans le comparatif entre versions. `@run_date`, facultatif,
-  est le seul paramètre disponible : s'il est utilisé, Airflow peut fournir la date du run sans modifier la
-  requête (relances, rattrapages).
-  `rules_registry` n'a donc pas de colonne `parameters`.
+- **Paramètres (écart au PRD F2)** : aucun. La requête s'exécute telle quelle, au test comme en production :
+  les seuils s'écrivent en dur dans le SQL (`amount_eur >= 500`), leur évolution se lit dans le comparatif
+  entre versions, et les dates sont relatives au jour d'exécution (`CURRENT_DATE()`). Tout `@paramètre` est
+  refusé. `rules_registry` n'a donc pas de colonne `parameters`. Conséquence à connaître pour l'équipe data :
+  rejouer une règle sur un jour passé (rattrapage) demande de réécrire la date dans la requête.
 - **Identité** : `owner_matricule` remplace `owner_email` dans `rules_registry`.
-- **@run_date pendant un test** (s'il est utilisé) : la veille (dernière journée complète), affichée dans le
-  bloc de test.
-  La période réellement couverte dépend de la requête (ex. fenêtre de 7 jours avant `@run_date`).
-- **Règles horaires** : `@run_date` est une date sans heure ; une fréquence horaire demandera une fenêtre
-  (`@run_start` / `@run_end`) à définir avec l'équipe data.
+- **Période d'un test** : la requête s'exécute le jour même. Le modèle de départ vise la veille, dernière journée
+  complète : `order_date = DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)`. La période couverte dépend de la
+  requête (ex. `BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 8 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)`).
+- **Règles horaires** : la fenêtre s'écrit avec `CURRENT_TIMESTAMP()` (ex. dernière heure écoulée).
 - **Déploiement** : API en ingress interne sans IAM entre front et API (le contrôle d'accès est réseau, PRD F8).
   La topologie exacte (load balancer interne, routage `/api`) reste à arbitrer.
 - **Valeurs provisoires** : typologies de fraude (Q4, `frontend/src/lib/format.ts`), budget mensuel (Q5),

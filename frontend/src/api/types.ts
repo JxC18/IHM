@@ -126,8 +126,6 @@ export interface DryRunResult {
   issues: SqlIssue[];
   /** Dépassement du plafond : l'exécution sera refusée. */
   exceedsBytesLimit: boolean;
-  /** Valeur de @run_date utilisée pour le test (la veille). */
-  runDate: string;
   testId: string;
 }
 
@@ -140,7 +138,6 @@ export interface ExecutionResult {
   totalRows: number;
   durationMs: number;
   bytesProcessed: number;
-  runDate: string;
   testId: string;
 }
 

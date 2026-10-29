@@ -1,7 +1,7 @@
 """Test d'une requête (PRD F3) : dry-run puis exécution échantillonnée sous garde-fous."""
 
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import datetime
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
@@ -15,11 +15,6 @@ from app.schemas import BudgetUsage, DryRunResult, ExecutionResult, Guardrails, 
 from app.sql_checks import check_hardcoded_dates, check_params, query_hash
 
 router = APIRouter(tags=["test"])
-
-
-def _test_run_date() -> date:
-    """Valeur de @run_date pendant un test : la veille, dernière journée complète."""
-    return date.today() - timedelta(days=1)
 
 
 def _month_start(t: datetime) -> datetime:
@@ -83,7 +78,7 @@ def _record(db: Session, user: User, body: QueryIn, target: Target, **fields) ->
 def _analyse(bq: BigQueryGateway, body: QueryIn) -> tuple[list[SqlIssue], object | None]:
     issues = check_params(body.sql) + check_hardcoded_dates(body.sql)
     try:
-        meta = bq.dry_run(body.sql, _test_run_date())
+        meta = bq.dry_run(body.sql)
     except QueryError as e:
         issues.insert(
             0, SqlIssue(severity="error", code="BIGQUERY", message=e.message, line=e.line, column=e.column)
@@ -163,7 +158,6 @@ def dry_run(
         estimated_cost_eur=cost,
         issues=issues,
         exceeds_bytes_limit=bool(meta and meta.bytes_processed > settings.max_bytes_billed),
-        run_date=_test_run_date(),
         test_id=run.id,
     )
 
@@ -193,7 +187,7 @@ def execute(
             429, "Budget mensuel de scan atteint : exécution bloquée jusqu'au mois prochain.", "BUDGET"
         )
     try:
-        res = bq.execute(body.sql, _test_run_date())
+        res = bq.execute(body.sql)
     except BytesLimitExceeded as e:
         _record(db, user, body, target, phase="EXECUTION", success=False, error=str(e))
         raise ApiError(422, "Exécution interrompue : plafond de volume scanné atteint.", "BYTES_LIMIT") from e
@@ -219,6 +213,5 @@ def execute(
         total_rows=res.total_rows,
         duration_ms=res.duration_ms,
         bytes_processed=res.bytes_processed,
-        run_date=_test_run_date(),
         test_id=run.id,
     )

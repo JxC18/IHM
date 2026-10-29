@@ -3,7 +3,7 @@ import { api } from '../api/client';
 import type { DryRunResult, ExecutionResult, SqlIssue, TestTarget } from '../api/types';
 import { useAsync } from '../lib/useAsync';
 import { addDays, fmtBytes, fmtDuration, fmtEur, fmtInt, fmtLongDate, isoDate } from '../lib/format';
-import { queryHash, usesRunDate } from '../lib/sql';
+import { queryHash } from '../lib/sql';
 import { Alert, Spinner } from './ui';
 
 interface Props {
@@ -105,12 +105,11 @@ export function TestPanel({ sql, target, onIssues, onGoTo, onTested, onExecuted 
         )}
       </div>
 
-      {usesRunDate(sql) && (
-        <p className="small" style={{ margin: 0 }}>
-          Le test s'exécute avec <span className="mono">@run_date</span> = <strong>{fmtLongDate(dry?.runDate ?? addDays(isoDate(new Date()), -1))}</strong>{' '}
-          (la veille). La période réellement couverte dépend de la façon dont la requête utilise cette date.
-        </p>
-      )}
+      <p className="small" style={{ margin: 0 }}>
+        La requête s'exécute telle quelle, aujourd'hui : <span className="mono">CURRENT_DATE()</span> vaut le{' '}
+        <strong>{fmtLongDate(isoDate(new Date()))}</strong>. Pour la veille ({fmtLongDate(addDays(isoDate(new Date()), -1))}), utilisez{' '}
+        <span className="mono">DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)</span>, comme dans le modèle de départ.
+      </p>
 
       {g && (
         <p className="small muted" style={{ margin: 0 }}>

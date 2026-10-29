@@ -200,12 +200,12 @@ function analyse(sql: string): Analysis {
         m[0].length,
         'warning',
         'HARDCODED_DATE',
-        `Date en dur (${m[0]}) : normal pour un seuil fixe. Si elle désigne le jour traité, la règle relira ce même jour à chaque exécution ; @run_date peut la remplacer`,
+        `Date en dur (${m[0]}) : normal pour un seuil fixe. Si elle désigne le jour traité, la règle relira ce même jour à chaque exécution : préférez DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY) pour la veille`,
       ),
     );
   }
 
-  // Paramètres : @run_date seul
+  // Paramètres : aucun
   issues.push(...checkParams(sql));
 
   // Schéma de sortie : la dernière projection SELECT de niveau 0
@@ -261,19 +261,11 @@ function rng(seed: string) {
   };
 }
 
-/** @run_date pendant un test : la veille, dernière journée complète. */
-export function testRunDate(): string {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
 export function simulateDryRun(sql: string, g: Guardrails, testId: string): DryRunResult {
   const a = analyse(sql);
-  const runDate = testRunDate();
   const ok = !a.issues.some((i) => i.severity === 'error');
-  if (!ok) return { ok, statementType: a.statementType, issues: a.issues, exceedsBytesLimit: false, runDate, testId };
-  // Filtrer sur @run_date élague les partitions : on ne scanne qu'une fraction.
+  if (!ok) return { ok, statementType: a.statementType, issues: a.issues, exceedsBytesLimit: false, testId };
+  // Filtrer sur la date élague les partitions : on ne scanne qu'une fraction.
   const r = rng(queryHash(sql));
   const bytesProcessed = Math.round(a.tables.reduce((s, t) => s + CATALOG[t].bytes, 0) * (0.55 + r() * 0.5));
   return {
@@ -284,7 +276,6 @@ export function simulateDryRun(sql: string, g: Guardrails, testId: string): DryR
     estimatedCostEur: (bytesProcessed / 1e12) * g.costPerTbEur,
     issues: a.issues,
     exceedsBytesLimit: bytesProcessed > g.maxBytesBilled,
-    runDate,
     testId,
   };
 }
@@ -336,7 +327,6 @@ export function simulateExecution(sql: string, g: Guardrails, dry: DryRunResult,
     totalRows,
     durationMs: Math.round(1500 + r() * 9000),
     bytesProcessed: dry.bytesProcessed ?? 0,
-    runDate: dry.runDate,
     testId,
   };
 }

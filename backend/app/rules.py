@@ -9,7 +9,7 @@ import logging
 import re
 import unicodedata
 import urllib.request
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
@@ -186,7 +186,7 @@ def validate(db: Session, bq: BigQueryGateway, data: RuleInput, rule_id: str | N
     # DML/DDL rejetés dès l'enregistrement, d'après le dry-run quand il aboutit (PRD F2).
     # Les autres contraintes (order_id, test réussi) bloquent la soumission, pas le brouillon.
     try:
-        stype = bq.dry_run(data.sql_query, date.today()).statement_type
+        stype = bq.dry_run(data.sql_query).statement_type
     except QueryError:
         kw = _first_keyword(data.sql_query)
         stype = "SELECT" if kw in ("SELECT", "WITH") else kw

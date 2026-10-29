@@ -7,7 +7,7 @@ from tests.conftest import login
 SQL = """SELECT
   o.order_id
 FROM `sales.orders` o
-WHERE o.order_date = @run_date
+WHERE o.order_date = DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
   AND o.amount_eur > 500"""
 RULE = {
     "name": "Panier élevé",
@@ -151,17 +151,14 @@ def test_dry_run_controles(client, bq):
     dry = client.post("/query/dry-run", json={"sql": sql}).json()
     issues = {i["code"]: i["severity"] for i in dry["issues"]}
     assert issues["NO_ORDER_ID"] == issues["PARAM_NOT_ALLOWED"] == "error"
-    # Une date en dur n'empêche pas de tester ; @run_date est facultatif.
-    assert issues["HARDCODED_DATE"] == "warning" and "RUN_DATE_MISSING" not in issues
+    # Une date en dur n'empêche pas de tester.
+    assert issues["HARDCODED_DATE"] == "warning"
 
 
-def test_date_en_dur_et_sans_run_date_soumissibles(client):
+def test_date_en_dur_soumissible(client):
     login(client)
     # Seuil de date fixe : légitime, la requête se teste et se soumet.
     _submit(client, {**RULE, "sqlQuery": SQL + "\n  AND o.created_at >= TIMESTAMP '2024-01-01'"})
-    # Sans @run_date : se teste et se soumet aussi.
-    sans = "SELECT o.order_id FROM `sales.orders` o WHERE o.order_date = CURRENT_DATE()"
-    _submit(client, {**RULE, "name": "Sans run_date", "sqlQuery": sans})
 
 
 def test_erreur_bigquery_avec_position(client, bq):

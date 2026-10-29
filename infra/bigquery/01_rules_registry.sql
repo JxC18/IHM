@@ -5,7 +5,7 @@
 -- et écrit `version` dans rule_runs. L'historique des versions et les brouillons restent dans la base de
 -- la plateforme ; une version reprise en brouillon avant tout run ramène la ligne à la version précédente.
 -- Écarts au PRD : owner_matricule au lieu de owner_email (le matricule est la clé d'identité, PRD §5.4) ;
--- pas de colonne parameters : les seuils sont écrits dans sql_query, seul @run_date est fourni par Airflow.
+-- pas de colonne parameters : la requête s'exécute telle quelle (seuils en dur, dates via CURRENT_DATE()).
 CREATE TABLE IF NOT EXISTS `${PROJECT}.${DATASET}.rules_registry` (
   rule_id          STRING    NOT NULL,   -- UUID, stable entre versions
   version          INT64     NOT NULL,

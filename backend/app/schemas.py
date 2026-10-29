@@ -159,7 +159,6 @@ class DryRunResult(Model):
     estimated_cost_eur: float | None = None
     issues: list[SqlIssue]
     exceeds_bytes_limit: bool
-    run_date: date  # valeur de @run_date utilisée pour le test
     test_id: str
 
 
@@ -171,7 +170,6 @@ class ExecutionResult(Model):
     total_rows: int
     duration_ms: int
     bytes_processed: int
-    run_date: date
     test_id: str
 
 

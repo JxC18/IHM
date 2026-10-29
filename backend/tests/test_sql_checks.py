@@ -8,11 +8,11 @@ def test_params_ignores_dans_chaines_et_commentaires():
     assert [n for n, _ in find_params(sql)] == ["run_date", "seuil"]
 
 
-def test_seul_run_date_est_autorise():
-    codes = [i.code for i in check_params("SELECT order_id WHERE x > @seuil")]
-    assert codes == ["PARAM_NOT_ALLOWED"]
-    assert check_params("SELECT order_id WHERE d = @run_date") == []
-    assert check_params("SELECT order_id FROM t") == []  # @run_date est facultatif
+def test_aucun_parametre_autorise():
+    # La requête s'exécute telle quelle : tout paramètre est refusé, @run_date compris.
+    codes = [i.code for i in check_params("SELECT order_id WHERE x > @seuil AND d = @run_date")]
+    assert codes == ["PARAM_NOT_ALLOWED", "PARAM_NOT_ALLOWED"]
+    assert check_params("SELECT order_id FROM t WHERE d = CURRENT_DATE()") == []
 
 
 def test_query_hash_identique_au_front():

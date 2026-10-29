@@ -37,7 +37,7 @@ export interface MockDb {
   usage: Record<string, Record<string, number>>;
 }
 
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 const daysAgo = (n: number, h = 10) => {
   const d = new Date();
@@ -116,7 +116,7 @@ const R1: Def = {
   c.account_created_at
 FROM \`sales.orders\` o
 JOIN \`sales.customers\` c USING (customer_id)
-WHERE o.order_date = @run_date
+WHERE o.order_date = DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
   AND o.amount_eur >= 500
   AND TIMESTAMP_DIFF(o.created_at, c.account_created_at, HOUR) < 24`,
 };
@@ -141,7 +141,7 @@ const R2: Def = {
 FROM \`sales.orders\` o
 JOIN \`sales.deliveries\` d USING (order_id)
 JOIN \`sales.addresses\` a ON a.address_id = o.billing_address_id
-WHERE o.order_date = @run_date
+WHERE o.order_date = DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
   AND d.country != a.country
   AND o.amount_eur >= 150`,
 };
@@ -163,7 +163,7 @@ const R3: Def = {
   p.card_bin
 FROM \`sales.payments\` p
 JOIN \`sales.orders\` o USING (order_id)
-WHERE o.order_date = @run_date
+WHERE o.order_date = DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
   AND p.attempt_count >= 3`,
 };
 const R3_V2_SQL = R3.sql.replace('>= 3', '>= 5') + `\n  AND p.status = 'ACCEPTED'`;
@@ -182,7 +182,7 @@ const R4: Def = {
   o.created_at
 FROM \`sales.orders\` o
 JOIN \`sales.customers\` c USING (customer_id)
-WHERE o.order_date = @run_date
+WHERE o.order_date = DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
   AND TIMESTAMP_DIFF(o.created_at, c.email_changed_at, MINUTE) BETWEEN 0 AND 120`,
 };
 
@@ -204,7 +204,7 @@ const R5: Def = {
   sql: `WITH usages AS (
   SELECT o.promo_code, o.shipping_address_id, COUNT(DISTINCT o.customer_id) AS nb_comptes
   FROM \`sales.orders\` o
-  WHERE o.order_date BETWEEN DATE_SUB(@run_date, INTERVAL 7 DAY) AND @run_date
+  WHERE o.order_date BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 8 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
     AND o.promo_code IS NOT NULL
   GROUP BY 1, 2
 )
@@ -234,7 +234,7 @@ const R6: Def = {
 FROM \`sales.orders\` o
 JOIN \`sales.payments\` p USING (order_id)
 JOIN \`sales.deliveries\` d USING (order_id)
-WHERE o.order_date = @run_date
+WHERE o.order_date = DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
   AND p.card_country != 'FR'
   AND d.delivery_mode = 'RELAY'
   AND o.amount_eur >= 400`,
@@ -252,7 +252,7 @@ const R7: Def = {
   o.order_id,
   COUNT(DISTINCT o.customer_id) OVER (PARTITION BY o.shipping_address_id) AS nb_comptes
 FROM \`sales.orders\` o
-WHERE o.order_date BETWEEN DATE_SUB(@run_date, INTERVAL 30 DAY) AND @run_date
+WHERE o.order_date BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 31 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
 QUALIFY nb_comptes > 4`,
 };
 
@@ -268,7 +268,7 @@ const R8: Def = {
   o.order_id,
   o.item_count
 FROM \`sales.orders\` o
-WHERE o.order_date = @run_date
+WHERE o.order_date = DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
   AND o.item_count >= 4`,
 };
 

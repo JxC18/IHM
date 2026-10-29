@@ -1,7 +1,6 @@
 import type { SqlIssue } from '../api/types';
 
 /** Paramètre réservé, fourni par Airflow à chaque exécution (PRD F2, contrainte 3). */
-export const RUN_DATE_PARAM = 'run_date';
 
 /**
  * Remplace commentaires et littéraux par des espaces, en conservant les
@@ -73,8 +72,8 @@ export function findParams(sql: string): ParamOccurrence[] {
 }
 
 /**
- * Paramètres de la requête (PRD F2, simplifié) : `@run_date`, facultatif, est le seul
- * paramètre disponible. Les seuils s'écrivent directement dans le SQL.
+ * Paramètres de la requête : aucun. La requête s'exécute telle quelle ; les seuils s'écrivent
+ * directement dans le SQL et les dates relatives avec CURRENT_DATE().
  * Contrôle d'ergonomie côté front ; le back refait la vérification.
  */
 export function checkParams(sql: string): SqlIssue[] {
@@ -82,13 +81,13 @@ export function checkParams(sql: string): SqlIssue[] {
   const used = findParams(sql);
   const reported = new Set<string>();
   for (const p of used) {
-    if (p.name === RUN_DATE_PARAM || reported.has(p.name)) continue;
+    if (reported.has(p.name)) continue;
     reported.add(p.name);
     const { line, column } = offsetToLineCol(sql, p.offset);
     issues.push({
       severity: 'error',
       code: 'PARAM_NOT_ALLOWED',
-      message: `@${p.name} : seul @${RUN_DATE_PARAM} est disponible. Écrivez la valeur directement dans la requête (ex. > 500).`,
+      message: `@${p.name} : les paramètres ne sont pas pris en charge, la requête s'exécute telle quelle. Écrivez la valeur dans la requête (ex. > 500, ou CURRENT_DATE() pour une date).`,
       line,
       column,
       length: p.name.length + 1,
@@ -96,8 +95,6 @@ export function checkParams(sql: string): SqlIssue[] {
   }
   return issues;
 }
-
-export const usesRunDate = (sql: string) => findParams(sql).some((p) => p.name === RUN_DATE_PARAM);
 
 /** Empreinte stable de la requête, pour lier un test à une version. */
 export function queryHash(sql: string): string {

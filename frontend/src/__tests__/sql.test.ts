@@ -15,10 +15,9 @@ describe('paramètres nommés', () => {
   it('ignore les variables système @@', () => {
     expect(findParams('SELECT @@project_id, @a')).toHaveLength(1);
   });
-  it('refuse tout paramètre autre que @run_date, qui reste facultatif', () => {
-    expect(checkParams('SELECT order_id WHERE x > @seuil').map((i) => i.code)).toEqual(['PARAM_NOT_ALLOWED']);
-    expect(checkParams('SELECT order_id WHERE d = @run_date')).toEqual([]);
-    expect(checkParams('SELECT order_id FROM t')).toEqual([]);
+  it('refuse tout paramètre, @run_date compris', () => {
+    expect(checkParams('SELECT order_id WHERE x > @seuil AND d = @run_date').map((i) => i.code)).toEqual(['PARAM_NOT_ALLOWED', 'PARAM_NOT_ALLOWED']);
+    expect(checkParams('SELECT order_id FROM t WHERE d = CURRENT_DATE()')).toEqual([]);
   });
   it('masque en conservant les positions', () => {
     const sql = "a /* x */ 'yy' b";
@@ -31,7 +30,7 @@ describe('paramètres nommés', () => {
 });
 
 describe('dry-run simulé', () => {
-  const ok = 'SELECT o.order_id FROM `sales.orders` o WHERE o.order_date = @run_date';
+  const ok = 'SELECT o.order_id FROM `sales.orders` o WHERE o.order_date = CURRENT_DATE()';
   it('accepte une requête conforme', () => {
     const r = simulateDryRun(ok, G, 't');
     expect(r.ok).toBe(true);
@@ -44,22 +43,22 @@ describe('dry-run simulé', () => {
     expect(r.issues[0].code).toBe('NOT_SELECT');
   });
   it('exige order_id en sortie', () => {
-    const r = simulateDryRun('SELECT o.customer_id FROM `sales.orders` o WHERE o.order_date = @run_date', G, 't');
+    const r = simulateDryRun('SELECT o.customer_id FROM `sales.orders` o WHERE o.order_date = CURRENT_DATE()', G, 't');
     expect(r.issues.map((i) => i.code)).toContain('NO_ORDER_ID');
   });
   it('signale une table inconnue avec sa position', () => {
-    const r = simulateDryRun('SELECT order_id\nFROM `sales.nope` WHERE d = @run_date', G, 't');
+    const r = simulateDryRun('SELECT order_id\nFROM `sales.nope` WHERE d = CURRENT_DATE()', G, 't');
     const i = r.issues.find((x) => x.code === 'NOT_FOUND')!;
     expect(i.line).toBe(2);
     expect(i.column).toBe(6);
   });
   it('signale les dates en dur sans bloquer le test', () => {
-    const r = simulateDryRun("SELECT order_id FROM `sales.orders` WHERE order_date = DATE '2026-01-01' AND x = @run_date", G, 't');
+    const r = simulateDryRun("SELECT order_id FROM `sales.orders` WHERE order_date = DATE '2026-01-01' AND x = 1", G, 't');
     expect(r.issues.find((i) => i.code === 'HARDCODED_DATE')?.severity).toBe('warning');
     expect(r.ok).toBe(true);
   });
   it('signale un dépassement du plafond de volume', () => {
-    const r = simulateDryRun('SELECT order_id FROM `tracking.web_events_raw` WHERE d = @run_date', G, 't');
+    const r = simulateDryRun('SELECT order_id FROM `tracking.web_events_raw` WHERE d = CURRENT_DATE()', G, 't');
     expect(r.ok).toBe(true);
     expect(r.exceedsBytesLimit).toBe(true);
   });

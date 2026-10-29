@@ -20,7 +20,7 @@ const EMPTY: RuleInput = {
   sqlQuery: `SELECT
   o.order_id
 FROM \`sales.orders\` o
-WHERE o.order_date = @run_date
+WHERE o.order_date = DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)  -- la veille
 `,
 };
 
@@ -406,8 +406,8 @@ export function RuleEditorPage() {
               <h2 id="sec-sql">Requête SQL</h2>
               <p>
                 Une seule instruction <span className="mono">SELECT</span>, exposant <span className="mono">order_id</span>. Les seuils s'écrivent
-                directement dans la requête (ex. <span className="mono">amount_eur &gt;= 500</span>). Paramètre facultatif :{' '}
-                <span className="mono">@run_date</span>, la date d'exécution (la veille pendant un test).
+                directement dans la requête (ex. <span className="mono">amount_eur &gt;= 500</span>), sans paramètre ; pour viser la veille :{' '}
+                <span className="mono">DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)</span>.
               </p>
             </div>
           </div>

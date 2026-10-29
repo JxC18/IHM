@@ -2,15 +2,13 @@
 
 Les contraintes structurelles (SELECT unique, colonne order_id) s'appuient sur
 les métadonnées du dry-run BigQuery, pas sur le texte : voir `query.py`. Ici,
-uniquement ce que BigQuery ne dit pas : seul @run_date (facultatif) est un paramètre ; dates en dur
-(simple alerte).
+uniquement ce que BigQuery ne dit pas : aucun paramètre (la requête s'exécute telle quelle) ; dates
+en dur (simple alerte).
 """
 
 import re
 
 from app.schemas import SqlIssue
-
-RUN_DATE_PARAM = "run_date"
 
 _PARAM_RE = re.compile(r"(^|[^@\w])@([A-Za-z_]\w*)")
 _DATE_RE = re.compile(r"(?:\b(?:DATE|TIMESTAMP)\s*)?'\d{4}-\d{2}-\d{2}[^']*'", re.IGNORECASE)
@@ -64,12 +62,12 @@ def find_params(sql: str) -> list[tuple[str, int]]:
 
 
 def check_params(sql: str) -> list[SqlIssue]:
-    """Seul `@run_date` (facultatif) est un paramètre : les seuils s'écrivent en dur dans le SQL."""
+    """Aucun paramètre : la requête s'exécute telle quelle (seuils en dur, dates via CURRENT_DATE())."""
     issues: list[SqlIssue] = []
     used = find_params(sql)
     reported: set[str] = set()
     for name, off in used:
-        if name == RUN_DATE_PARAM or name in reported:
+        if name in reported:
             continue
         reported.add(name)
         line, col = offset_to_line_col(sql, off)
@@ -77,18 +75,14 @@ def check_params(sql: str) -> list[SqlIssue]:
             SqlIssue(
                 severity="error",
                 code="PARAM_NOT_ALLOWED",
-                message=f"@{name} : seul @{RUN_DATE_PARAM} est disponible. "
-                "Écrivez la valeur directement dans la requête (ex. > 500).",
+                message=f"@{name} : les paramètres ne sont pas pris en charge, la requête s'exécute telle "
+                "quelle. Écrivez la valeur dans la requête (ex. > 500, ou CURRENT_DATE() pour une date).",
                 line=line,
                 column=col,
                 length=len(name) + 1,
             )
         )
     return issues
-
-
-def uses_run_date(sql: str) -> bool:
-    return any(n == RUN_DATE_PARAM for n, _ in find_params(sql))
 
 
 def check_hardcoded_dates(sql: str) -> list[SqlIssue]:
@@ -103,7 +97,8 @@ def check_hardcoded_dates(sql: str) -> list[SqlIssue]:
                 severity="warning",
                 code="HARDCODED_DATE",
                 message=f"Date en dur ({m.group(0)}) : normal pour un seuil fixe. Si elle désigne le jour "
-                "traité, la règle relira ce même jour à chaque exécution ; @run_date peut la remplacer.",
+                "traité, la règle relira ce même jour à chaque exécution : préférez "
+                "DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY) pour la veille.",
                 line=line,
                 column=col,
                 length=len(m.group(0)),
