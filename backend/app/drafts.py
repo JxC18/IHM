@@ -31,7 +31,7 @@ from app.rules import (
     withdrawable,
 )
 from app.schemas import DraftIn, DraftOut, RuleDetail, RuleInput
-from app.sql_checks import check_params, query_hash
+from app.sql_checks import query_hash
 
 router = APIRouter(prefix="/drafts", tags=["brouillons"])
 
@@ -217,13 +217,6 @@ def submit_draft(
             409,
             "Le dernier test doit être une exécution réussie portant sur la version actuelle de la requête.",
             "TEST_REQUIRED",
-        )
-    if any(i.code == "RUN_DATE_MISSING" for i in check_params(d.sql_query)):
-        raise ApiError(
-            409,
-            "La requête doit utiliser @run_date : c'est par lui qu'Airflow choisit le jour traité "
-            "à chaque run et lors des rattrapages.",
-            "RUN_DATE_MISSING",
         )
     if not name_free(db, d.name, d.rule_id):
         raise ApiError(409, f"Une règle nommée « {d.name} » existe déjà.", "NAME_TAKEN")

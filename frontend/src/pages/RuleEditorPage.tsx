@@ -155,12 +155,8 @@ export function RuleEditorPage() {
         : `Nouvelle version — ${rule.name}`
       : 'Nouvelle règle';
   usePageTitle(draft || rule || !(ruleId || draftId) ? heading : undefined);
-  // @run_date n'est pas exigé pour tester, mais l'est pour soumettre (c'est lui qu'Airflow fait varier).
-  const runDateMissing = paramIssues.some((i) => i.code === 'RUN_DATE_MISSING');
-  const canSubmit = formValid && execHash === hash && !runDateMissing && !paramIssues.some((i) => i.severity === 'error');
-  const submitHint = runDateMissing
-    ? 'La requête doit utiliser @run_date pour être soumise'
-    : 'Une exécution de test réussie sur la requête actuelle est requise';
+  const canSubmit = formValid && execHash === hash && !paramIssues.some((i) => i.severity === 'error');
+  const submitHint = 'Une exécution de test réussie sur la requête actuelle est requise';
   // Un collègue a soumis une version depuis que ce brouillon a été commencé.
   const behind = draft && draft.latestVersion !== undefined && draft.latestVersion !== draft.baseVersion;
 
@@ -410,8 +406,8 @@ export function RuleEditorPage() {
               <h2 id="sec-sql">Requête SQL</h2>
               <p>
                 Une seule instruction <span className="mono">SELECT</span>, exposant <span className="mono">order_id</span>. Les seuils s'écrivent
-                directement dans la requête (ex. <span className="mono">amount_eur &gt;= 500</span>) ; seule la date du run est un paramètre,{' '}
-                <span className="mono">@run_date</span>, fourni par Airflow à chaque exécution.
+                directement dans la requête (ex. <span className="mono">amount_eur &gt;= 500</span>). Paramètre facultatif :{' '}
+                <span className="mono">@run_date</span>, la date d'exécution (la veille pendant un test).
               </p>
             </div>
           </div>
@@ -479,7 +475,7 @@ export function RuleEditorPage() {
         </div>
         {!canSubmit && (
           <p className="small muted" style={{ margin: 0, textAlign: 'right' }}>
-            La soumission exige tous les champs obligatoires, l'usage de @run_date et une exécution de test réussie sur la requête actuelle.
+            La soumission exige tous les champs obligatoires et une exécution de test réussie sur la requête actuelle.
           </p>
         )}
       </div>

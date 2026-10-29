@@ -73,8 +73,8 @@ export function findParams(sql: string): ParamOccurrence[] {
 }
 
 /**
- * Paramètres de la requête (PRD F2, simplifié) : `@run_date`, fourni par Airflow,
- * est le seul paramètre. Les seuils s'écrivent directement dans le SQL.
+ * Paramètres de la requête (PRD F2, simplifié) : `@run_date`, facultatif, est le seul
+ * paramètre disponible. Les seuils s'écrivent directement dans le SQL.
  * Contrôle d'ergonomie côté front ; le back refait la vérification.
  */
 export function checkParams(sql: string): SqlIssue[] {
@@ -94,16 +94,10 @@ export function checkParams(sql: string): SqlIssue[] {
       length: p.name.length + 1,
     });
   }
-  if (!used.some((p) => p.name === RUN_DATE_PARAM)) {
-    // N'empêche pas de tester ; bloque la soumission : c'est par @run_date qu'Airflow choisit le jour traité.
-    issues.push({
-      severity: 'warning',
-      code: 'RUN_DATE_MISSING',
-      message: `Pour la soumission, la requête devra utiliser @${RUN_DATE_PARAM} : c'est par lui qu'Airflow choisit le jour traité (ex. WHERE order_date = @${RUN_DATE_PARAM}).`,
-    });
-  }
   return issues;
 }
+
+export const usesRunDate = (sql: string) => findParams(sql).some((p) => p.name === RUN_DATE_PARAM);
 
 /** Empreinte stable de la requête, pour lier un test à une version. */
 export function queryHash(sql: string): string {

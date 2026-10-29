@@ -200,7 +200,7 @@ function analyse(sql: string): Analysis {
         m[0].length,
         'warning',
         'HARDCODED_DATE',
-        `Date en dur (${m[0]}) : normal pour un seuil fixe ; si elle désigne le jour traité, utilisez @run_date, sinon chaque run d'Airflow relira ce même jour`,
+        `Date en dur (${m[0]}) : normal pour un seuil fixe. Si elle désigne le jour traité, la règle relira ce même jour à chaque exécution ; @run_date peut la remplacer`,
       ),
     );
   }

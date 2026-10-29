@@ -10,8 +10,9 @@ def test_params_ignores_dans_chaines_et_commentaires():
 
 def test_seul_run_date_est_autorise():
     codes = [i.code for i in check_params("SELECT order_id WHERE x > @seuil")]
-    assert codes == ["PARAM_NOT_ALLOWED", "RUN_DATE_MISSING"]
+    assert codes == ["PARAM_NOT_ALLOWED"]
     assert check_params("SELECT order_id WHERE d = @run_date") == []
+    assert check_params("SELECT order_id FROM t") == []  # @run_date est facultatif
 
 
 def test_query_hash_identique_au_front():

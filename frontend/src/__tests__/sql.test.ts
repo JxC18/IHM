@@ -15,9 +15,10 @@ describe('paramètres nommés', () => {
   it('ignore les variables système @@', () => {
     expect(findParams('SELECT @@project_id, @a')).toHaveLength(1);
   });
-  it('refuse tout paramètre autre que @run_date et exige @run_date', () => {
-    expect(checkParams('SELECT order_id WHERE x > @seuil').map((i) => i.code)).toEqual(['PARAM_NOT_ALLOWED', 'RUN_DATE_MISSING']);
+  it('refuse tout paramètre autre que @run_date, qui reste facultatif', () => {
+    expect(checkParams('SELECT order_id WHERE x > @seuil').map((i) => i.code)).toEqual(['PARAM_NOT_ALLOWED']);
     expect(checkParams('SELECT order_id WHERE d = @run_date')).toEqual([]);
+    expect(checkParams('SELECT order_id FROM t')).toEqual([]);
   });
   it('masque en conservant les positions', () => {
     const sql = "a /* x */ 'yy' b";

@@ -184,7 +184,7 @@ def validate(db: Session, bq: BigQueryGateway, data: RuleInput, rule_id: str | N
     if not name_free(db, data.name, rule_id):
         raise ApiError(409, f"Une règle nommée « {data.name.strip()} » existe déjà.", "NAME_TAKEN")
     # DML/DDL rejetés dès l'enregistrement, d'après le dry-run quand il aboutit (PRD F2).
-    # Les autres contraintes (order_id, @run_date…) bloquent la soumission, pas le brouillon.
+    # Les autres contraintes (order_id, test réussi) bloquent la soumission, pas le brouillon.
     try:
         stype = bq.dry_run(data.sql_query, date.today()).statement_type
     except QueryError:

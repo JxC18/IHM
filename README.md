@@ -19,7 +19,7 @@ sans passer par le mail, et mesure leur efficacité grâce au retour du prestata
 │   ├── app/auth.py      identification par matricule ; point UNIQUE de résolution de l'identité
 │   ├── app/rules.py     règles : liste, création, versions, soumission (F1, F4, F5)
 │   ├── app/query.py     test d'une requête : dry-run, exécution, garde-fous, budget (F3)
-│   ├── app/sql_checks.py contrôles du SQL non couverts par BigQuery (@run_date, dates en dur…)
+│   ├── app/sql_checks.py contrôles du SQL non couverts par BigQuery (paramètres, dates en dur…)
 │   ├── app/pilotage.py  indicateurs de performance et journal d'audit, en lecture (F6, F7, F8)
 │   ├── app/bigquery.py  tout l'accès BigQuery (réel ou factice), dont la publication dans rules_registry
 │   ├── migrations/      Alembic (PostgreSQL / Cloud SQL)
@@ -301,17 +301,18 @@ navigateur ──► front (Nginx, Cloud Run) ──/api──► API FastAPI (C
   une nouvelle version (risque R3 : le motif n'est pas tracé). L'état des runs est recopié par
   `POST /internal/sync-runs`, à appeler périodiquement (Cloud Scheduler, toutes les heures par exemple).
 - **Contraintes SQL** : seul le DML/DDL bloque l'enregistrement d'un brouillon. Pour tester, il faut une requête
-  valide pour BigQuery exposant `order_id`. La soumission exige en plus `@run_date` : c'est par lui qu'Airflow
-  choisit le jour traité, à chaque run comme lors des rattrapages ; sans lui, la requête ne pourrait pas être
-  rejouée sur un autre jour. Les dates en dur ne sont qu'une alerte : légitimes comme seuil fixe
-  (`created_at >= '2024-01-01'`), à éviter comme jour traité (`order_date = '2026-10-27'` relirait ce jour à
-  chaque run).
+  valide pour BigQuery exposant `order_id` ; soumettre exige un test réussi. `@run_date` est **facultatif** :
+  la façon dont la requête sera planifiée relève de l'équipe data, pas de l'auteur de la règle. Les dates en
+  dur ne sont qu'une alerte : légitimes comme seuil fixe (`created_at >= '2024-01-01'`), à éviter comme jour
+  traité (`order_date = '2026-10-27'` relirait ce jour à chaque exécution).
 - **Paramètres (écart au PRD F2)** : pas de paramètres déclarés. Les seuils s'écrivent en dur dans le SQL
-  (`amount_eur >= 500`) et leur évolution se lit dans le comparatif entre versions. `@run_date` est le seul
-  paramètre : Airflow fournit la date du run sans modifier la requête, ce qui permet relances et rattrapages.
+  (`amount_eur >= 500`) et leur évolution se lit dans le comparatif entre versions. `@run_date`, facultatif,
+  est le seul paramètre disponible : s'il est utilisé, Airflow peut fournir la date du run sans modifier la
+  requête (relances, rattrapages).
   `rules_registry` n'a donc pas de colonne `parameters`.
 - **Identité** : `owner_matricule` remplace `owner_email` dans `rules_registry`.
-- **@run_date pendant un test** : la veille (dernière journée complète), affichée dans le bloc de test.
+- **@run_date pendant un test** (s'il est utilisé) : la veille (dernière journée complète), affichée dans le
+  bloc de test.
   La période réellement couverte dépend de la requête (ex. fenêtre de 7 jours avant `@run_date`).
 - **Règles horaires** : `@run_date` est une date sans heure ; une fréquence horaire demandera une fenêtre
   (`@run_start` / `@run_end`) à définir avec l'équipe data.

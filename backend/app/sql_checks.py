@@ -2,8 +2,8 @@
 
 Les contraintes structurelles (SELECT unique, colonne order_id) s'appuient sur
 les métadonnées du dry-run BigQuery, pas sur le texte : voir `query.py`. Ici,
-uniquement ce que BigQuery ne dit pas : seul @run_date est un paramètre, exigé à la soumission ;
-dates en dur (simple alerte).
+uniquement ce que BigQuery ne dit pas : seul @run_date (facultatif) est un paramètre ; dates en dur
+(simple alerte).
 """
 
 import re
@@ -64,7 +64,7 @@ def find_params(sql: str) -> list[tuple[str, int]]:
 
 
 def check_params(sql: str) -> list[SqlIssue]:
-    """`@run_date`, fourni par Airflow, est le seul paramètre : les seuils s'écrivent en dur dans le SQL."""
+    """Seul `@run_date` (facultatif) est un paramètre : les seuils s'écrivent en dur dans le SQL."""
     issues: list[SqlIssue] = []
     used = find_params(sql)
     reported: set[str] = set()
@@ -84,18 +84,11 @@ def check_params(sql: str) -> list[SqlIssue]:
                 length=len(name) + 1,
             )
         )
-    if not any(n == RUN_DATE_PARAM for n, _ in used):
-        issues.append(
-            SqlIssue(
-                # N'empêche pas de tester ; bloque la soumission (voir drafts.submit_draft) : c'est
-                # par @run_date qu'Airflow choisit le jour traité à chaque run et lors des rattrapages.
-                severity="warning",
-                code="RUN_DATE_MISSING",
-                message=f"Pour la soumission, la requête devra utiliser @{RUN_DATE_PARAM} : c'est par lui "
-                f"qu'Airflow choisit le jour traité (ex. WHERE order_date = @{RUN_DATE_PARAM}).",
-            )
-        )
     return issues
+
+
+def uses_run_date(sql: str) -> bool:
+    return any(n == RUN_DATE_PARAM for n, _ in find_params(sql))
 
 
 def check_hardcoded_dates(sql: str) -> list[SqlIssue]:
@@ -109,8 +102,8 @@ def check_hardcoded_dates(sql: str) -> list[SqlIssue]:
                 # 1er janvier 2024), mais pas comme jour traité, qui serait alors le même à chaque run.
                 severity="warning",
                 code="HARDCODED_DATE",
-                message=f"Date en dur ({m.group(0)}) : normal pour un seuil fixe ; si elle désigne le jour "
-                "traité, utilisez @run_date, sinon chaque run d'Airflow relira ce même jour.",
+                message=f"Date en dur ({m.group(0)}) : normal pour un seuil fixe. Si elle désigne le jour "
+                "traité, la règle relira ce même jour à chaque exécution ; @run_date peut la remplacer.",
                 line=line,
                 column=col,
                 length=len(m.group(0)),

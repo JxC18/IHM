@@ -18,6 +18,7 @@ from typing import Any, Protocol
 from app.core import Settings, get_settings
 from app.database import Rule, RuleVersion
 from app.schemas import Column, DailyPerformance, RuleRun, VersionPerformance
+from app.sql_checks import uses_run_date
 
 log = logging.getLogger(__name__)
 
@@ -111,9 +112,9 @@ class RealBigQueryGateway:
         self.client = bigquery.Client(project=settings.gcp_project or None, location=settings.bq_location)
         self.ds = f"`{self.client.project}.{settings.bq_dataset}`"
 
-    def _config(self, run_date: date, **kw):
-        # @run_date est le seul paramètre de requête (les seuils sont écrits dans le SQL).
-        qp = [self._bq.ScalarQueryParameter("run_date", "DATE", run_date)]
+    def _config(self, sql: str, run_date: date, **kw):
+        # @run_date, facultatif, est le seul paramètre possible : fourni seulement si la requête l'utilise.
+        qp = [self._bq.ScalarQueryParameter("run_date", "DATE", run_date)] if uses_run_date(sql) else []
         return self._bq.QueryJobConfig(
             query_parameters=qp, use_query_cache=False, labels={"app": "rules-manager"}, **kw
         )
@@ -122,7 +123,7 @@ class RealBigQueryGateway:
         from google.api_core.exceptions import GoogleAPICallError
 
         try:
-            job = self.client.query(sql, job_config=self._config(run_date, dry_run=True))
+            job = self.client.query(sql, job_config=self._config(sql, run_date, dry_run=True))
         except GoogleAPICallError as e:
             raise QueryError(getattr(e, "message", str(e))) from e
         schema = [Column(name=f.name, type=f.field_type) for f in (job.schema or [])]
@@ -131,7 +132,7 @@ class RealBigQueryGateway:
     def execute(self, sql, run_date):
         from google.api_core.exceptions import GoogleAPICallError
 
-        cfg = self._config(run_date, maximum_bytes_billed=self.settings.max_bytes_billed)
+        cfg = self._config(sql, run_date, maximum_bytes_billed=self.settings.max_bytes_billed)
         cfg.job_timeout_ms = self.settings.job_timeout_ms
         start = time.monotonic()
         try:
