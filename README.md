@@ -165,6 +165,25 @@ https://nodejs.org/en/download, la décompresser (par ex. dans `C:\Users\<vous>\
 PATH avec la commande du point 3. Si le poste bloque aussi cela, demander l'installation au service informatique ;
 en attendant, l'API se teste seule via http://localhost:8000/docs.
 
+### Créer les tables BigQuery (mode `real`, une seule fois)
+
+Prérequis : Google Cloud SDK (`bq`) et `gcloud auth login`. `FEEDBACK_TABLE` est la table du prestataire
+(`dataset.table`, sans le projet), lue par la vue `v_rule_performance`. Le script peut être rejoué.
+
+macOS / Linux / WSL (nécessite aussi `envsubst` : `sudo apt install -y gettext-base`) :
+```bash
+cd infra/bigquery
+PROJECT=mon-projet DATASET=fraud_rules FEEDBACK_TABLE=prestataire.feedback ./apply.sh
+```
+
+Windows (PowerShell) :
+```powershell
+cd infra\bigquery
+powershell -ExecutionPolicy Bypass -File .\apply.ps1 -Project mon-projet -Dataset fraud_rules -FeedbackTable prestataire.feedback
+```
+`-ExecutionPolicy Bypass` évite le blocage des scripts téléchargés (archive .zip). Projet et dataset doivent être
+les mêmes que `RM_GCP_PROJECT` et `RM_BQ_DATASET` dans `backend/.env`.
+
 ### Commandes du Makefile (macOS / Linux)
 
 | Besoin | Commande |
@@ -253,7 +272,7 @@ navigateur ──► front (Nginx, Cloud Run) ──/api──► API FastAPI (C
   ) AS t
   ```
   Une table `rule_alerts` créée avant l'ajout de `details` est mise à jour par
-  `infra/bigquery/06_rule_alerts_details.sql` (rejoué sans risque par `apply.sh`).
+  `infra/bigquery/06_rule_alerts_details.sql` (rejoué sans risque par `apply.sh` / `apply.ps1`).
 
   Les statuts « Validée » et « Refusée » disparaissent : un refus passe hors plateforme et l'analyste soumet
   une nouvelle version (risque R3 : le motif n'est pas tracé). L'état des runs est recopié par
