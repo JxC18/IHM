@@ -29,7 +29,8 @@ sans passer par le mail, et mesure leur efficacité grâce au retour du prestata
 │   └── cloudbuild.yaml  build → Artifact Registry → Cloud Run (+ job de migration)
 ├── docker-compose.yml   environnement local complet (PostgreSQL + API + front)
 ├── .github/workflows/   CI : typecheck, tests, lint, migrations sur PostgreSQL, build des images
-└── Makefile
+├── Makefile             commandes courantes (macOS / Linux)
+└── run.cmd, run.ps1     tout lancer en une commande sous Windows
 ```
 
 ## Démarrer
@@ -67,6 +68,19 @@ cd ihm
 ```
 Sans Git : télécharger https://github.com/JxC18/IHM/archive/refs/heads/claude/rules-manager-prd-oldfut.zip,
 le décompresser et ouvrir un terminal dans le dossier `IHM-claude-rules-manager-prd-oldfut`.
+
+### Windows : tout lancer en une commande
+
+Après l'étape 1 (Node.js et Python installés), à la racine du projet : **double-cliquer sur `run.cmd`**, ou
+dans PowerShell :
+```powershell
+.\run.cmd            # API + interface, navigateur ouvert sur http://localhost:5173
+.\run.cmd -Demo      # interface seule, données simulées (Python inutile)
+.\run.cmd -Install   # forcer la réinstallation des dépendances
+```
+Le premier lancement installe tout (quelques minutes) et crée `backend\.env` (SQLite, BigQuery simulé) s'il
+n'existe pas ; les suivants démarrent directement. Journal de l'API : `backend\api.log`, `backend\api-errors.log`.
+`Ctrl+C` arrête l'interface et l'API. Les étapes 3a et 3b ci-dessous détaillent ce que fait le script.
 
 ### 3a. Voir l'interface seule (données simulées)
 
@@ -189,7 +203,7 @@ powershell -ExecutionPolicy Bypass -File infra\bigquery\apply.ps1
 ```
 `-ExecutionPolicy Bypass` évite le blocage des scripts téléchargés (archive .zip). Le script peut être rejoué.
 
-### Commandes du Makefile (macOS / Linux)
+### Commandes du Makefile (macOS / Linux ; sous Windows : `run.cmd`)
 
 | Besoin | Commande |
 |---|---|
