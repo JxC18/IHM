@@ -383,7 +383,7 @@ export function RuleEditorPage() {
                 <legend className="label">
                   Criticité<span className="req" aria-hidden="true">*</span>
                 </legend>
-                <div className="seg" style={{ marginTop: 4 }}>
+                <div className="seg seg-fill" style={{ marginTop: 4 }}>
                   {CRITICALITIES.map((c) => (
                     <button type="button" key={c} aria-pressed={form.criticality === c} onClick={() => set('criticality', c)}>
                       {CRITICALITY_LABEL[c]}

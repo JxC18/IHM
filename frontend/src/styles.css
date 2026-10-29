@@ -942,6 +942,13 @@ table.data tr:last-child td {
 .seg button:last-child {
   border-right: none;
 }
+/* Sélecteur étiré sur toute la largeur d'un champ : boutons de largeur égale. */
+.seg.seg-fill {
+  display: flex;
+}
+.seg.seg-fill button {
+  flex: 1 1 0;
+}
 .seg button[aria-pressed='true'] {
   background: var(--accent-soft);
   color: var(--accent);
